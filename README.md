@@ -2,7 +2,11 @@
 
 Proyek ini bertujuan untuk melakukan scraping data sekolah dari situs resmi Direktorat Jenderal Pendidikan Dasar dan Menengah (Dikdasmen) Kemendikbud RI: [https://sekolah.data.kemendikdasmen.go.id](https://sekolah.data.kemendikdasmen.go.id). Data yang diambil meliputi informasi sekolah berdasarkan wilayah, jenjang pendidikan, dan status sekolah.
 
+---
+
 ![Screenshoot](./screenshoot.png)
+
+---
 
 ## Fitur
 

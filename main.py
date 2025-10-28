@@ -74,11 +74,11 @@ def get_kabupaten_list(session):
                 text = option.get_text(strip=True)
                 if value and value != "":
                     kabupaten_list.append({'kode': value, 'nama': text})
-            print(f"✅ Ditemukan {len(kabupaten_list)} kabupaten/kota")
+            print(f"Ditemukan {len(kabupaten_list)} kabupaten/kota")
             return kabupaten_list
         return []
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         return []
 
 def get_total_schools(html_content):
@@ -194,7 +194,7 @@ def scrape_kabupaten(session, kab_code, kab_name, bentuk_pendidikan="", status_s
             schools_per_page = len(schools_page1)  # Biasanya 4
             total_pages = (total_schools + schools_per_page - 1) // schools_per_page
             
-            print(f"      📊 Total: {total_schools} sekolah, {total_pages} halaman")
+            print(f"Total: {total_schools} sekolah, {total_pages} halaman")
             
             # Loop untuk halaman 2 dan seterusnya menggunakan AJAX
             url_ajax = f"{BASE_URL}/index.php/Chome/pagingpencarian"
@@ -220,13 +220,13 @@ def scrape_kabupaten(session, kab_code, kab_name, bentuk_pendidikan="", status_s
                             
                             # Progress setiap 20 halaman
                             if page % 20 == 0:
-                                print(f"      📄 Progress: {page}/{total_pages} halaman, {len(all_schools)} sekolah")
+                                print(f"Progress: {page}/{total_pages} halaman, {len(all_schools)} sekolah")
                     
                     # Delay untuk menghindari rate limiting
                     time.sleep(0.3)
                     
                 except Exception as e:
-                    print(f"      ⚠️ Error page {page}: {e}")
+                    print(f"Error page {page}: {e}")
                     continue
         
         # Tambahkan info kabupaten ke semua sekolah
@@ -237,20 +237,20 @@ def scrape_kabupaten(session, kab_code, kab_name, bentuk_pendidikan="", status_s
         return all_schools
         
     except Exception as e:
-        print(f"      ❌ Error scraping: {e}")
+        print(f"Error scraping: {e}")
         return []
 
 def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
-    print("🚀 Memulai scraping data sekolah Kemendikbuddasmen...")
-    print(f"📌 Base URL: {BASE_URL}")
+    print("Memulai scraping data sekolah Kemendikbuddasmen...")
+    print(f"Base URL: {BASE_URL}")
     
     session = get_session()
     
-    print("\n📍 Mengambil daftar kabupaten/kota...")
+    print("\nMengambil daftar kabupaten/kota...")
     kabupaten_list = get_kabupaten_list(session)
     
     if not kabupaten_list:
-        print("❌ Tidak dapat mengambil daftar kabupaten")
+        print("Tidak dapat mengambil daftar kabupaten")
         return
     
     checkpoint = load_checkpoint() if resume else None
@@ -258,16 +258,16 @@ def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
     all_data = []
     
     if checkpoint and resume:
-        print(f"\n📂 Checkpoint ditemukan!")
+        print(f"\nCheckpoint ditemukan!")
         print(f"   Last: {checkpoint.get('current_kab', 'N/A')}")
         print(f"   Progress: {checkpoint['last_kab_index']}/{checkpoint['total_kab']}")
         print(f"   Data: {checkpoint['data_count']:,}")
         
-        response = input("\n🔄 Resume? (y/n): ").lower()
+        response = input("\nResume? (y/n): ").lower()
         if response == 'y':
             start_index = checkpoint['last_kab_index'] + 1
             all_data = load_existing_data()
-            print(f"✅ Resume dari index {start_index}")
+            print(f"Resume dari index {start_index}")
         else:
             if os.path.exists(TEMP_DATA_FILE):
                 os.remove(TEMP_DATA_FILE)
@@ -275,8 +275,8 @@ def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
                 os.remove(CHECKPOINT_FILE)
     
     total_kab = len(kabupaten_list)
-    print(f"\n📊 Total kabupaten/kota: {total_kab}")
-    print(f"▶️  Mulai dari index: {start_index}\n")
+    print(f"\nTotal kabupaten/kota: {total_kab}")
+    print(f"Mulai dari index: {start_index}\n")
     
     with tqdm(total=total_kab - start_index, desc="Progress") as pbar:
         for i in range(start_index, total_kab):
@@ -315,14 +315,14 @@ def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
                 backup_file = f"backup_kab_{i+1}.csv"
                 df_backup = pd.DataFrame(all_data)
                 df_backup.to_csv(backup_file, index=False, encoding='utf-8-sig')
-                print(f"\n💾 Backup: {backup_file} ({len(all_data):,} sekolah)")
+                print(f"\nBackup: {backup_file} ({len(all_data):,} sekolah)")
             
             time.sleep(1)
     
-    print(f"\n✅ Scraping selesai! Total: {len(all_data):,}")
+    print(f"\nScraping selesai! Total: {len(all_data):,}")
     
     if not all_data:
-        print("❌ Tidak ada data")
+        print("Tidak ada data")
         return
     
     df = pd.DataFrame(all_data)
@@ -331,10 +331,10 @@ def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
         initial_count = len(df)
         df = df.drop_duplicates(subset=['npsn'], keep='first')
         if initial_count > len(df):
-            print(f"🗑️  Duplikat dihapus: {initial_count - len(df):,}")
+            print(f"Duplikat dihapus: {initial_count - len(df):,}")
     
     df.to_csv(OUTPUT_FILE, index=False, encoding='utf-8-sig')
-    print(f"💾 Disimpan: {OUTPUT_FILE}")
+    print(f"Disimpan: {OUTPUT_FILE}")
     
     if os.path.exists(TEMP_DATA_FILE):
         os.remove(TEMP_DATA_FILE)
@@ -342,34 +342,34 @@ def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
         os.remove(CHECKPOINT_FILE)
     
     print("\n" + "="*70)
-    print("📊 STATISTIK")
+    print("STATISTIK")
     print("="*70)
     print(f"Total Sekolah: {len(df):,}")
     print(f"Total Kolom: {len(df.columns)}")
     
     if 'kabupaten_kota' in df.columns:
-        print(f"\n🗺️  Top 10 Kabupaten:")
+        print(f"\nTop 10 Kabupaten:")
         for i, (kab, count) in enumerate(df['kabupaten_kota'].value_counts().head(10).items(), 1):
             print(f"   {i:2}. {kab:40} : {count:6,}")
 
 def test_scraping(session):
-    print("🧪 Test scraping Kab. Aceh Barat...")
+    print("Test scraping...")
     
     schools = scrape_kabupaten(session, '060600', 'Prov. Aceh - Kab. Aceh Barat')
     
     if schools:
-        print(f"\n✅ Berhasil: {len(schools)} sekolah")
-        print("\n📋 Sample 5 sekolah pertama:")
+        print(f"\nBerhasil: {len(schools)} sekolah")
+        print("\nSample 5 sekolah pertama:")
         for i, school in enumerate(schools[:5], 1):
             print(f"\n{i}. {school.get('nama', 'N/A')}")
             print(f"   NPSN: {school.get('npsn', 'N/A')}")
         
         df = pd.DataFrame(schools)
-        df.to_csv('test_aceh_barat.csv', index=False, encoding='utf-8-sig')
-        print(f"\n💾 Disimpan: test_aceh_barat.csv")
-        print(f"📊 Total: {len(schools)} sekolah")
+        df.to_csv('testing.csv', index=False, encoding='utf-8-sig')
+        print(f"\nDisimpan: testing.csv")
+        print(f"Total: {len(schools)} sekolah")
     else:
-        print("\n❌ Gagal scraping")
+        print("\nGagal scraping")
 
 def main():
     print("="*70)
@@ -379,8 +379,8 @@ def main():
     
     session = get_session()
     
-    print("\n📋 Menu:")
-    print("1. Test scraping Kab. Aceh Barat (580 sekolah)")
+    print("\nMenu:")
+    print("1. Test scraping")
     print("2. Scrape semua data")
     print("3. Scrape dengan filter jenjang")
     print("4. Scrape dengan filter status")
@@ -393,21 +393,21 @@ def main():
         elif choice == '2':
             scrape_all_sekolah(resume=True)
         elif choice == '3':
-            print("\n📚 Jenjang: SD, SMP, SMA, SMK, TK, dll")
+            print("\nJenjang: SD, SMP, SMA, SMK, TK, dll")
             jenjang = input("Masukkan jenjang: ").strip().upper()
             scrape_all_sekolah(resume=True, filter_jenjang=jenjang)
         elif choice == '4':
-            print("\n🏛️  1. Negeri  2. Swasta")
+            print("\n1. Negeri  2. Swasta")
             status_choice = input("Pilih (1/2): ").strip()
             status = "NEGERI" if status_choice == '1' else "SWASTA"
             scrape_all_sekolah(resume=True, filter_status=status)
         else:
-            print("❌ Pilihan tidak valid")
+            print("Pilihan tidak valid")
     except KeyboardInterrupt:
-        print("\n\n⚠️  Dihentikan oleh user")
-        print("💾 Checkpoint tersimpan")
+        print("\n\nDihentikan oleh user")
+        print("Checkpoint tersimpan")
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
 

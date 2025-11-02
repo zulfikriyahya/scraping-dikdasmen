@@ -165,7 +165,7 @@ python main.py
 
 ---
 
-## 🔄 Fitur Resume/Checkpoint
+## Fitur Resume/Checkpoint
 
 ### Cara Kerja
 

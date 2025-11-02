@@ -277,11 +277,11 @@ class SekolahScraper:
                         field = cols[1].get_text(strip=True)
                         value = cols[3].get_text(strip=True)
                         
-                        # Cek apakah ada link dengan class link2 untuk SK Operasional
-                        link2 = cols[3].find('a', class_='link2')
-                        if link2 and link2.get('href'):
+                        # Cek apakah ada link dengan class link1 untuk SK Operasional
+                        link1 = cols[3].find('a', class_='link1')
+                        if link1 and link1.get('href'):
                             if 'File SK Operasional' in field or 'file' in field.lower():
-                                data['link_sk_operasional'] = link2.get('href')
+                                data['link_sk_operasional'] = link1.get('href')
                         
                         # Cek apakah ada link dengan class btn-link untuk Akreditasi
                         btn_link = cols[3].find('a', class_='btn-link')

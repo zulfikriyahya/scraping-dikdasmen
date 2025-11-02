@@ -1,415 +1,673 @@
 import requests
+from bs4 import BeautifulSoup
 import pandas as pd
 import time
-import os
-import json
-from tqdm import tqdm
-from datetime import datetime
-from bs4 import BeautifulSoup
 import re
+from urllib.parse import urljoin
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill
+import json
+import os
+from datetime import datetime
+import sys
 
-# Konfigurasi
-BASE_URL = "https://sekolah.data.kemendikdasmen.go.id"
-OUTPUT_FILE = "data_sekolah_kemendikbuddasmen.csv"
-CHECKPOINT_FILE = "scraping_checkpoint.json"
-TEMP_DATA_FILE = "temp_scraped_data.csv"
-
-# Headers untuk request
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Connection': 'keep-alive',
-    'Referer': BASE_URL,
-}
-
-def save_checkpoint(kab_index, total_kab, data_count, current_kab=""):
-    checkpoint = {
-        'last_kab_index': kab_index,
-        'current_kab': current_kab,
-        'total_kab': total_kab,
-        'data_count': data_count,
-        'timestamp': datetime.now().isoformat()
-    }
-    with open(CHECKPOINT_FILE, 'w') as f:
-        json.dump(checkpoint, f)
-
-def load_checkpoint():
-    if os.path.exists(CHECKPOINT_FILE):
-        try:
-            with open(CHECKPOINT_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return None
-    return None
-
-def load_existing_data():
-    if os.path.exists(TEMP_DATA_FILE):
-        try:
-            df = pd.read_csv(TEMP_DATA_FILE, encoding='utf-8-sig')
-            return df.to_dict('records')
-        except:
-            return []
-    return []
-
-def save_temp_data(all_data):
-    df = pd.DataFrame(all_data)
-    df.to_csv(TEMP_DATA_FILE, index=False, encoding='utf-8-sig')
-
-def get_session():
-    session = requests.Session()
-    session.headers.update(HEADERS)
-    return session
-
-def get_kabupaten_list(session):
-    try:
-        response = session.get(f"{BASE_URL}/index.php", timeout=30)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        select_kab = soup.find('select', {'id': 'kode_kabupaten'})
+class SekolahScraper:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        self.base_url = "https://sekolah.data.kemendikdasmen.go.id"
+        self.ref_url = "https://referensi.data.kemendikdasmen.go.id"
+        self.checkpoint_file = "scraper_checkpoint.json"
+        self.temp_data_file = "temp_data.json"
         
-        if select_kab:
-            kabupaten_list = []
-            for option in select_kab.find_all('option'):
-                value = option.get('value')
-                text = option.get_text(strip=True)
-                if value and value != "":
-                    kabupaten_list.append({'kode': value, 'nama': text})
-            print(f"Ditemukan {len(kabupaten_list)} kabupaten/kota")
-            return kabupaten_list
-        return []
-    except Exception as e:
-        print(f"Error: {e}")
-        return []
-
-def get_total_schools(html_content):
-    """Extract total jumlah sekolah dari pagination info"""
-    try:
-        soup = BeautifulSoup(html_content, 'html.parser')
-        pagination = soup.find('ul', {'class': 'pagination'})
-        if pagination:
-            active_li = pagination.find('li', {'class': 'active'})
-            if active_li:
-                text = active_li.get_text(strip=True)
-                # Format: "580 Sekolah"
-                match = re.search(r'(\d+)\s+Sekolah', text)
-                if match:
-                    return int(match.group(1))
-        return 0
-    except:
-        return 0
-
-def parse_school_data(html_content):
-    soup = BeautifulSoup(html_content, 'html.parser')
-    schools = []
-    boxes = soup.find_all('div', class_='box box-default')
+    def save_checkpoint(self, page, processed_schools, total_schools):
+        """
+        Menyimpan checkpoint progress scraping
+        """
+        checkpoint = {
+            'last_page': page,
+            'processed_schools': processed_schools,
+            'total_schools': total_schools,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        with open(self.checkpoint_file, 'w') as f:
+            json.dump(checkpoint, f, indent=2)
+        print(f"Checkpoint disimpan: Halaman {page}, Sekolah {processed_schools}/{total_schools}")
     
-    for box in boxes:
+    def load_checkpoint(self):
+        """
+        Memuat checkpoint jika ada
+        """
+        if os.path.exists(self.checkpoint_file):
+            with open(self.checkpoint_file, 'r') as f:
+                checkpoint = json.load(f)
+            print(f"\nCHECKPOINT DITEMUKAN!")
+            print(f"{'='*70}")
+            print(f"   Halaman terakhir  : {checkpoint['last_page']:,}")
+            print(f"   Progress sekolah  : {checkpoint['processed_schools']:,}/{checkpoint['total_schools']:,}")
+            print(f"   Persentase        : {(checkpoint['processed_schools']/checkpoint['total_schools']*100):.2f}%")
+            print(f"   Waktu tersimpan   : {checkpoint['timestamp']}")
+            print(f"{'='*70}")
+            return checkpoint
+        return None
+    
+    def save_temp_data(self, akreditasi_data, referensi_data):
+        """
+        Menyimpan data sementara
+        """
+        temp_data = {
+            'akreditasi': akreditasi_data,
+            'referensi': referensi_data
+        }
+        with open(self.temp_data_file, 'w') as f:
+            json.dump(temp_data, f, indent=2)
+    
+    def load_temp_data(self):
+        """
+        Memuat data sementara jika ada
+        """
+        if os.path.exists(self.temp_data_file):
+            with open(self.temp_data_file, 'r') as f:
+                temp_data = json.load(f)
+            print(f"Data sementara dimuat: {len(temp_data['akreditasi'])} akreditasi, {len(temp_data['referensi'])} referensi")
+            return temp_data['akreditasi'], temp_data['referensi']
+        return [], []
+    
+    def get_total_schools(self):
+        """
+        Mendapatkan total jumlah sekolah
+        """
         try:
-            school = {}
-            list_items = box.find_all('li', class_='list-group-item')
+            url = f"{self.base_url}/index.php/Chome/pencarian/"
+            response = self.session.post(url, data={'page': 1}, timeout=30)
+            soup = BeautifulSoup(response.content, 'html.parser')
             
-            if list_items:
-                first_item = list_items[0]
-                link = first_item.find('a')
+            # Cari total sekolah di pagination
+            pagination = soup.find('ul', class_='pagination')
+            if pagination:
+                active = pagination.find('li', class_='active')
+                if active:
+                    text = active.get_text(strip=True)
+                    match = re.search(r'([\d,]+)\s+Sekolah', text)
+                    if match:
+                        total = int(match.group(1).replace(',', ''))
+                        return total
+            
+            return 560228  # Default dari informasi yang diberikan
+        except Exception as e:
+            print(f"Error mendapatkan total sekolah: {e}")
+            return 560228
+    
+    def get_school_list(self, page=1):
+        """
+        Mengambil daftar sekolah dari halaman pencarian
+        """
+        url = f"{self.base_url}/index.php/Chome/pencarian/"
+        
+        data = {
+            'page': page,
+            'kode_kabupaten': '',
+            'kode_kecamatan': '',
+            'bentuk_pendidikan': '',
+            'status_sekolah': 'semua',
+            'nama': ''
+        }
+        
+        try:
+            response = self.session.post(url, data=data, timeout=30)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            schools = []
+            # Cari link profil sekolah
+            links = soup.find_all('a', href=re.compile(r'/Chome/profil/'))
+            
+            seen = set()
+            for link in links:
+                href = link.get('href')
+                if href and href not in seen:
+                    school_id = href.split('/')[-1]
+                    schools.append({
+                        'url': urljoin(self.base_url, href),
+                        'school_id': school_id
+                    })
+                    seen.add(href)
+            
+            return schools
+            
+        except Exception as e:
+            print(f"Error mengambil daftar sekolah halaman {page}: {e}")
+            return []
+    
+    def get_akreditasi_data(self, school_url):
+        """
+        Mengambil data akreditasi dari halaman profil sekolah
+        """
+        try:
+            time.sleep(1)  # Delay untuk menghindari rate limiting
+            response = self.session.get(school_url, timeout=30)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            data = {
+                'npsn': '',
+                'nama_sekolah': '',
+                'standar_isi': '',
+                'standar_proses': '',
+                'standar_kelulusan': '',
+                'standar_tenaga_pendidik': '',
+                'standar_sarana_prasarana': '',
+                'standar_pengelolaan': '',
+                'standar_pembiayaan': '',
+                'standar_penilaian': '',
+                'tahun': '',
+                'nilai_akhir': '',
+                'akreditasi': '',
+                'link_akreditasi': ''
+            }
+            
+            # Ambil NPSN dan Nama Sekolah dari header
+            header = soup.find('h4', class_='page-header')
+            if header:
+                text = header.get_text()
+                npsn_match = re.search(r'\((\d+)\)', text)
+                if npsn_match:
+                    data['npsn'] = npsn_match.group(1)
+                nama_match = re.search(r'\)\s+(.+?)(?:<small>|$)', str(header))
+                if nama_match:
+                    data['nama_sekolah'] = nama_match.group(1).strip()
+            
+            # Cari section akreditasi
+            akreditasi_section = soup.find('div', id='dataakreditasi')
+            if akreditasi_section:
+                list_items = akreditasi_section.find_all('li', class_='list-group-item')
                 
-                if link:
-                    text = link.get_text(strip=True)
-                    npsn_match = re.search(r'\(([^\)]+)\)', text)
-                    if npsn_match:
-                        school['npsn'] = npsn_match.group(1).strip()
-                    
-                    nama_match = re.search(r'\)\s*(.+)', text)
-                    if nama_match:
-                        school['nama'] = nama_match.group(1).strip()
-                    else:
-                        school['nama'] = text
-                    
-                    detail_url = link.get('href', '')
-                    if detail_url:
-                        school['detail_url'] = detail_url
-                        sekolah_id_match = re.search(r'/profil/([A-F0-9-]+)', detail_url)
-                        if sekolah_id_match:
-                            school['sekolah_id'] = sekolah_id_match.group(1)
-                
-                for i, item in enumerate(list_items[1:], 1):
+                for item in list_items:
                     text = item.get_text(strip=True)
-                    if len(text) < 5:
-                        continue
                     
-                    if i == 1:
-                        school['alamat_jalan'] = text
-                    elif i == 2:
-                        school['kelurahan_kecamatan'] = text
-                        kec_match = re.search(r'Kec\.\s*(.+)', text)
-                        if kec_match:
-                            school['kecamatan'] = kec_match.group(1).strip()
-                    elif i == 3:
-                        school['kabupaten_provinsi'] = text
-                        parts = text.split('Prov.')
-                        if len(parts) == 2:
-                            school['kabupaten_kota'] = parts[0].strip()
-                            school['provinsi'] = 'Prov. ' + parts[1].strip()
-                
-                if school.get('nama') or school.get('npsn'):
-                    schools.append(school)
-        except:
-            continue
-    
-    return schools
-
-def scrape_kabupaten(session, kab_code, kab_name, bentuk_pendidikan="", status_sekolah="semua"):
-    """Scraping dengan AJAX pagination yang benar"""
-    all_schools = []
-    page = 1
-    
-    # Halaman 1 - menggunakan POST biasa untuk mendapatkan total
-    url_page1 = f"{BASE_URL}/index.php/Chome/pencarian/"
-    data_page1 = {
-        'page': 1,
-        'kode_kabupaten': kab_code,
-        'kode_kecamatan': '',
-        'bentuk_pendidikan': bentuk_pendidikan,
-        'status_sekolah': status_sekolah,
-        'nama': ''
-    }
-    
-    try:
-        response = session.post(url_page1, data=data_page1, timeout=30)
-        if response.status_code != 200:
-            return []
-        
-        html_content = response.text
-        schools_page1 = parse_school_data(html_content)
-        
-        # Get total schools dari pagination
-        total_schools = get_total_schools(html_content)
-        
-        if not schools_page1:
-            return []
-        
-        all_schools.extend(schools_page1)
-        
-        # Jika total schools > 4, lanjutkan ke halaman berikutnya
-        if total_schools > 4:
-            schools_per_page = len(schools_page1)  # Biasanya 4
-            total_pages = (total_schools + schools_per_page - 1) // schools_per_page
-            
-            print(f"Total: {total_schools} sekolah, {total_pages} halaman")
-            
-            # Loop untuk halaman 2 dan seterusnya menggunakan AJAX
-            url_ajax = f"{BASE_URL}/index.php/Chome/pagingpencarian"
-            
-            for page in range(2, total_pages + 1):
-                try:
-                    data_ajax = {
-                        'page': page,
-                        'nama': '',
-                        'kode_kabupaten': kab_code,
-                        'kode_kecamatan': '',
-                        'bentuk_pendidikan': bentuk_pendidikan,
-                        'status_sekolah': status_sekolah
-                    }
+                    if 'Standar Isi' in text:
+                        data['standar_isi'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Proses' in text:
+                        data['standar_proses'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Kelulusan' in text:
+                        data['standar_kelulusan'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Tenaga Pendidik' in text:
+                        data['standar_tenaga_pendidik'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Sarana Prasarana' in text:
+                        data['standar_sarana_prasarana'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Pengelolaan' in text:
+                        data['standar_pengelolaan'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Pembiayaan' in text:
+                        data['standar_pembiayaan'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Standar Penilaian' in text:
+                        data['standar_penilaian'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Tahun' in text and 'Tahun' not in data or not data['tahun']:
+                        data['tahun'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Nilai Akhir' in text:
+                        data['nilai_akhir'] = text.split(':')[-1].strip() if ':' in text else ''
+                    elif 'Akreditasi' in text and 'Standar' not in text:
+                        akred = text.split(':')[-1].strip() if ':' in text else ''
+                        if akred and len(akred) <= 2:
+                            data['akreditasi'] = akred
                     
-                    response_ajax = session.post(url_ajax, data=data_ajax, timeout=30)
-                    
-                    if response_ajax.status_code == 200:
-                        schools_page = parse_school_data(response_ajax.text)
-                        
-                        if schools_page:
-                            all_schools.extend(schools_page)
-                            
-                            # Progress setiap 20 halaman
-                            if page % 20 == 0:
-                                print(f"Progress: {page}/{total_pages} halaman, {len(all_schools)} sekolah")
-                    
-                    # Delay untuk menghindari rate limiting
-                    time.sleep(0.3)
-                    
-                except Exception as e:
-                    print(f"Error page {page}: {e}")
-                    continue
-        
-        # Tambahkan info kabupaten ke semua sekolah
-        for school in all_schools:
-            school['kabupaten_kota'] = kab_name
-            school['kode_kab'] = kab_code
-        
-        return all_schools
-        
-    except Exception as e:
-        print(f"Error scraping: {e}")
-        return []
-
-def scrape_all_sekolah(resume=True, filter_jenjang="", filter_status="semua"):
-    print("Memulai scraping data sekolah Kemendikbuddasmen...")
-    print(f"Base URL: {BASE_URL}")
-    
-    session = get_session()
-    
-    print("\nMengambil daftar kabupaten/kota...")
-    kabupaten_list = get_kabupaten_list(session)
-    
-    if not kabupaten_list:
-        print("Tidak dapat mengambil daftar kabupaten")
-        return
-    
-    checkpoint = load_checkpoint() if resume else None
-    start_index = 0
-    all_data = []
-    
-    if checkpoint and resume:
-        print(f"\nCheckpoint ditemukan!")
-        print(f"   Last: {checkpoint.get('current_kab', 'N/A')}")
-        print(f"   Progress: {checkpoint['last_kab_index']}/{checkpoint['total_kab']}")
-        print(f"   Data: {checkpoint['data_count']:,}")
-        
-        response = input("\nResume? (y/n): ").lower()
-        if response == 'y':
-            start_index = checkpoint['last_kab_index'] + 1
-            all_data = load_existing_data()
-            print(f"Resume dari index {start_index}")
-        else:
-            if os.path.exists(TEMP_DATA_FILE):
-                os.remove(TEMP_DATA_FILE)
-            if os.path.exists(CHECKPOINT_FILE):
-                os.remove(CHECKPOINT_FILE)
-    
-    total_kab = len(kabupaten_list)
-    print(f"\nTotal kabupaten/kota: {total_kab}")
-    print(f"Mulai dari index: {start_index}\n")
-    
-    with tqdm(total=total_kab - start_index, desc="Progress") as pbar:
-        for i in range(start_index, total_kab):
-            kab = kabupaten_list[i]
-            kab_code = kab['kode']
-            kab_name = kab['nama']
+                    # Ambil link akreditasi dari item yang ada link dengan class btn-link
+                    btn_link = item.find('a', class_='btn-link')
+                    if btn_link and btn_link.get('href'):
+                        data['link_akreditasi'] = btn_link.get('href')
             
-            schools = scrape_kabupaten(
-                session, kab_code, kab_name,
-                bentuk_pendidikan=filter_jenjang,
-                status_sekolah=filter_status
-            )
+            return data
             
-            if schools:
-                all_data.extend(schools)
-                pbar.set_postfix({
-                    'Kab': kab_name[:25],
-                    'Sekolah': len(schools),
-                    'Total': f"{len(all_data):,}"
-                })
-            else:
-                pbar.set_postfix({
-                    'Kab': kab_name[:25],
-                    'Status': 'No data'
-                })
-            
-            pbar.update(1)
-            
-            # Save checkpoint setiap 5 kabupaten
-            if (i + 1) % 5 == 0:
-                save_checkpoint(i, total_kab, len(all_data), kab_name)
-                save_temp_data(all_data)
-            
-            # Backup setiap 50 kabupaten
-            if (i + 1) % 50 == 0:
-                backup_file = f"backup_kab_{i+1}.csv"
-                df_backup = pd.DataFrame(all_data)
-                df_backup.to_csv(backup_file, index=False, encoding='utf-8-sig')
-                print(f"\nBackup: {backup_file} ({len(all_data):,} sekolah)")
-            
+        except Exception as e:
+            print(f"Error mengambil data akreditasi: {e}")
+            return None
+    
+    def get_referensi_data(self, npsn):
+        """
+        Mengambil data dari halaman referensi
+        """
+        try:
+            url = f"{self.ref_url}/tabs.php?npsn={npsn}"
             time.sleep(1)
+            response = self.session.get(url, timeout=30)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            data = {
+                'npsn': npsn,
+                'nama': '',
+                'alamat': '',
+                'desa_kelurahan': '',
+                'kecamatan': '',
+                'kabupaten': '',
+                'provinsi': '',
+                'status_sekolah': '',
+                'bentuk_pendidikan': '',
+                'jenjang_pendidikan': '',
+                'kementerian_pembina': '',
+                'naungan': '',
+                'npyp': '',
+                'no_sk_pendirian': '',
+                'tanggal_sk_pendirian': '',
+                'nomor_sk_operasional': '',
+                'tanggal_sk_operasional': '',
+                'file_sk_operasional': '',
+                'link_sk_operasional': '',
+                'tanggal_upload_sk': '',
+                'akreditasi': '',
+                'link_akreditasi_ref': '',
+                'luas_tanah': '',
+                'akses_internet': '',
+                'sumber_listrik': '',
+                'fax': '',
+                'telepon': '',
+                'email': '',
+                'website': '',
+                'operator': '',
+                'lintang': '',
+                'bujur': ''
+            }
+            
+            # Parse semua tabel dalam tabs
+            tables = soup.find_all('table')
+            
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 4:
+                        field = cols[1].get_text(strip=True)
+                        value = cols[3].get_text(strip=True)
+                        
+                        # Cek apakah ada link dengan class link2 untuk SK Operasional
+                        link2 = cols[3].find('a', class_='link2')
+                        if link2 and link2.get('href'):
+                            if 'File SK Operasional' in field or 'file' in field.lower():
+                                data['link_sk_operasional'] = link2.get('href')
+                        
+                        # Cek apakah ada link dengan class btn-link untuk Akreditasi
+                        btn_link = cols[3].find('a', class_='btn-link')
+                        if btn_link and btn_link.get('href'):
+                            if 'Akreditasi' in field:
+                                data['link_akreditasi_ref'] = btn_link.get('href')
+                        
+                        # Mapping fields
+                        field_map = {
+                            'Nama': 'nama',
+                            'NPSN': 'npsn',
+                            'Alamat': 'alamat',
+                            'Desa/Kelurahan': 'desa_kelurahan',
+                            'Kecamatan/Kota (LN)': 'kecamatan',
+                            'Kab.-Kota/Negara (LN)': 'kabupaten',
+                            'Propinsi/Luar Negeri (LN)': 'provinsi',
+                            'Status Sekolah': 'status_sekolah',
+                            'Bentuk Pendidikan': 'bentuk_pendidikan',
+                            'Jenjang Pendidikan': 'jenjang_pendidikan',
+                            'Kementerian Pembina': 'kementerian_pembina',
+                            'Naungan': 'naungan',
+                            'NPYP': 'npyp',
+                            'No. SK. Pendirian': 'no_sk_pendirian',
+                            'Tanggal SK. Pendirian': 'tanggal_sk_pendirian',
+                            'Nomor SK Operasional': 'nomor_sk_operasional',
+                            'Tanggal SK Operasional': 'tanggal_sk_operasional',
+                            'Tanggal Upload SK Op.': 'tanggal_upload_sk',
+                            'Akreditasi': 'akreditasi',
+                            'Luas Tanah': 'luas_tanah',
+                            'Akses Internet': 'akses_internet',
+                            'Sumber Listrik': 'sumber_listrik',
+                            'Fax': 'fax',
+                            'Telepon': 'telepon',
+                            'Email': 'email',
+                            'Website': 'website',
+                            'Operator': 'operator'
+                        }
+                        
+                        if field in field_map:
+                            data[field_map[field]] = value
+            
+            # Ambil koordinat
+            script_text = soup.find_all('script')
+            for script in script_text:
+                if script.string and 'lat:' in script.string:
+                    lat_match = re.search(r'lat:\s*([\d.\-]+)', script.string)
+                    lon_match = re.search(r'lon:\s*([\d.\-]+)', script.string)
+                    if lat_match:
+                        data['lintang'] = lat_match.group(1)
+                    if lon_match:
+                        data['bujur'] = lon_match.group(1)
+            
+            return data
+            
+        except Exception as e:
+            print(f"Error mengambil data referensi: {e}")
+            return None
     
-    print(f"\nScraping selesai! Total: {len(all_data):,}")
-    
-    if not all_data:
-        print("Tidak ada data")
-        return
-    
-    df = pd.DataFrame(all_data)
-    
-    if 'npsn' in df.columns:
-        initial_count = len(df)
-        df = df.drop_duplicates(subset=['npsn'], keep='first')
-        if initial_count > len(df):
-            print(f"Duplikat dihapus: {initial_count - len(df):,}")
-    
-    df.to_csv(OUTPUT_FILE, index=False, encoding='utf-8-sig')
-    print(f"Disimpan: {OUTPUT_FILE}")
-    
-    if os.path.exists(TEMP_DATA_FILE):
-        os.remove(TEMP_DATA_FILE)
-    if os.path.exists(CHECKPOINT_FILE):
-        os.remove(CHECKPOINT_FILE)
-    
-    print("\n" + "="*70)
-    print("STATISTIK")
-    print("="*70)
-    print(f"Total Sekolah: {len(df):,}")
-    print(f"Total Kolom: {len(df.columns)}")
-    
-    if 'kabupaten_kota' in df.columns:
-        print(f"\nTop 10 Kabupaten:")
-        for i, (kab, count) in enumerate(df['kabupaten_kota'].value_counts().head(10).items(), 1):
-            print(f"   {i:2}. {kab:40} : {count:6,}")
+    def save_to_excel(self, akreditasi_data, referensi_data, filename):
+        """
+        Menyimpan data ke file Excel
+        """
+        try:
+            # Buat workbook
+            wb = openpyxl.Workbook()
+            
+            # Sheet 1: Data Akreditasi
+            ws1 = wb.active
+            ws1.title = "Data Akreditasi"
+            
+            # Header untuk akreditasi
+            akred_headers = [
+                'NPSN', 'Nama Sekolah', 'Standar Isi', 'Standar Proses',
+                'Standar Kelulusan', 'Standar Tenaga Pendidik',
+                'Standar Sarana Prasarana', 'Standar Pengelolaan',
+                'Standar Pembiayaan', 'Standar Penilaian',
+                'Tahun', 'Nilai Akhir', 'Akreditasi', 'Link Akreditasi'
+            ]
+            
+            ws1.append(akred_headers)
+            
+            # Style header
+            for cell in ws1[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Isi data akreditasi
+            for data in akreditasi_data:
+                row = [
+                    data.get('npsn', ''),
+                    data.get('nama_sekolah', ''),
+                    data.get('standar_isi', ''),
+                    data.get('standar_proses', ''),
+                    data.get('standar_kelulusan', ''),
+                    data.get('standar_tenaga_pendidik', ''),
+                    data.get('standar_sarana_prasarana', ''),
+                    data.get('standar_pengelolaan', ''),
+                    data.get('standar_pembiayaan', ''),
+                    data.get('standar_penilaian', ''),
+                    data.get('tahun', ''),
+                    data.get('nilai_akhir', ''),
+                    data.get('akreditasi', ''),
+                    data.get('link_akreditasi', '')
+                ]
+                ws1.append(row)
+            
+            # Auto-width columns
+            for column in ws1.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws1.column_dimensions[column_letter].width = adjusted_width
+            
+            # Sheet 2: Data Referensi
+            ws2 = wb.create_sheet(title="Data Referensi")
+            
+            ref_headers = [
+                'NPSN', 'Nama', 'Alamat', 'Desa/Kelurahan', 'Kecamatan',
+                'Kabupaten', 'Provinsi', 'Status Sekolah', 'Bentuk Pendidikan',
+                'Jenjang Pendidikan', 'Kementerian Pembina', 'Naungan', 'NPYP',
+                'No SK Pendirian', 'Tanggal SK Pendirian', 'Nomor SK Operasional',
+                'Tanggal SK Operasional', 'File SK Operasional', 'Link SK Operasional',
+                'Tanggal Upload SK', 'Akreditasi', 'Link Akreditasi',
+                'Luas Tanah', 'Akses Internet', 'Sumber Listrik',
+                'Fax', 'Telepon', 'Email', 'Website', 'Operator', 'Lintang', 'Bujur'
+            ]
+            
+            ws2.append(ref_headers)
+            
+            # Style header
+            for cell in ws2[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Isi data referensi
+            for data in referensi_data:
+                row = [
+                    data.get('npsn', ''),
+                    data.get('nama', ''),
+                    data.get('alamat', ''),
+                    data.get('desa_kelurahan', ''),
+                    data.get('kecamatan', ''),
+                    data.get('kabupaten', ''),
+                    data.get('provinsi', ''),
+                    data.get('status_sekolah', ''),
+                    data.get('bentuk_pendidikan', ''),
+                    data.get('jenjang_pendidikan', ''),
+                    data.get('kementerian_pembina', ''),
+                    data.get('naungan', ''),
+                    data.get('npyp', ''),
+                    data.get('no_sk_pendirian', ''),
+                    data.get('tanggal_sk_pendirian', ''),
+                    data.get('nomor_sk_operasional', ''),
+                    data.get('tanggal_sk_operasional', ''),
+                    data.get('file_sk_operasional', ''),
+                    data.get('link_sk_operasional', ''),
+                    data.get('tanggal_upload_sk', ''),
+                    data.get('akreditasi', ''),
+                    data.get('link_akreditasi_ref', ''),
+                    data.get('luas_tanah', ''),
+                    data.get('akses_internet', ''),
+                    data.get('sumber_listrik', ''),
+                    data.get('fax', ''),
+                    data.get('telepon', ''),
+                    data.get('email', ''),
+                    data.get('website', ''),
+                    data.get('operator', ''),
+                    data.get('lintang', ''),
+                    data.get('bujur', '')
+                ]
+                ws2.append(row)
+            
+            # Auto-width columns
+            for column in ws2.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws2.column_dimensions[column_letter].width = adjusted_width
+            
+            # Simpan file
+            wb.save(filename)
+            print(f"\nData berhasil disimpan ke {filename}")
+            
+        except Exception as e:
+            print(f"Error menyimpan ke Excel: {e}")
 
-def test_scraping(session):
-    print("Test scraping...")
-    
-    schools = scrape_kabupaten(session, '060600', 'Prov. Aceh - Kab. Aceh Barat')
-    
-    if schools:
-        print(f"\nBerhasil: {len(schools)} sekolah")
-        print("\nSample 5 sekolah pertama:")
-        for i, school in enumerate(schools[:5], 1):
-            print(f"\n{i}. {school.get('nama', 'N/A')}")
-            print(f"   NPSN: {school.get('npsn', 'N/A')}")
+    def scrape_all(self):
+        """
+        Fungsi utama untuk scraping SEMUA data sekolah dengan fitur resume
+        """
+        print("\n" + "="*70)
+        print("  SCRAPING SEMUA DATA SEKOLAH KEMENDIKDASMEN")
+        print("="*70 + "\n")
         
-        df = pd.DataFrame(schools)
-        df.to_csv('testing.csv', index=False, encoding='utf-8-sig')
-        print(f"\nDisimpan: testing.csv")
-        print(f"Total: {len(schools)} sekolah")
-    else:
-        print("\nGagal scraping")
-
-def main():
-    print("="*70)
-    print("  SCRAPER DATA SEKOLAH KEMENDIKBUDDASMEN")
-    print("  https://sekolah.data.kemendikdasmen.go.id")
-    print("="*70)
-    
-    session = get_session()
-    
-    print("\nMenu:")
-    print("1. Test scraping")
-    print("2. Scrape semua data")
-    print("3. Scrape dengan filter jenjang")
-    print("4. Scrape dengan filter status")
-    
-    choice = input("\nPilih (1-4): ").strip()
-    
-    try:
-        if choice == '1':
-            test_scraping(session)
-        elif choice == '2':
-            scrape_all_sekolah(resume=True)
-        elif choice == '3':
-            print("\nJenjang: SD, SMP, SMA, SMK, TK, dll")
-            jenjang = input("Masukkan jenjang: ").strip().upper()
-            scrape_all_sekolah(resume=True, filter_jenjang=jenjang)
-        elif choice == '4':
-            print("\n1. Negeri  2. Swasta")
-            status_choice = input("Pilih (1/2): ").strip()
-            status = "NEGERI" if status_choice == '1' else "SWASTA"
-            scrape_all_sekolah(resume=True, filter_status=status)
+        # Cek apakah ada checkpoint untuk resume
+        checkpoint = self.load_checkpoint()
+        
+        start_page = 1
+        processed_count = 0
+        akreditasi_data = []
+        referensi_data = []
+        resume_mode = False
+        
+        if checkpoint:
+            while True:
+                response = input("\nLanjutkan dari checkpoint? (y/n): ").strip().lower()
+                if response in ['y', 'n']:
+                    break
+                print("Input tidak valid. Ketik 'y' atau 'n'")
+            
+            if response == 'y':
+                resume_mode = True
+                start_page = checkpoint['last_page']
+                processed_count = checkpoint['processed_schools']
+                
+                # Load data yang sudah di-scrape
+                akreditasi_data, referensi_data = self.load_temp_data()
+                print(f"\nResume dari halaman {start_page}")
+            else:
+                print("\nMemulai scraping baru dari awal...")
+                # Hapus file checkpoint lama
+                if os.path.exists(self.checkpoint_file):
+                    os.remove(self.checkpoint_file)
+                if os.path.exists(self.temp_data_file):
+                    os.remove(self.temp_data_file)
         else:
-            print("Pilihan tidak valid")
-    except KeyboardInterrupt:
-        print("\n\nDihentikan oleh user")
-        print("Checkpoint tersimpan")
-    except Exception as e:
-        print(f"\nError: {e}")
-        import traceback
-        traceback.print_exc()
+            print("Tidak ada checkpoint. Memulai scraping baru...\n")
+        
+        # Dapatkan total sekolah
+        print("Mengambil informasi total sekolah...")
+        total_schools = self.get_total_schools()
+        total_pages = (total_schools // 4) + 1  # 4 sekolah per halaman
+        
+        print(f"\n{'='*70}")
+        print(f"Total Sekolah    : {total_schools:,}")
+        print(f"Total Halaman    : {total_pages:,}")
+        print(f"Mulai dari       : Halaman {start_page:,}")
+        if resume_mode:
+            print(f"Progress awal    : {processed_count:,} sekolah ({processed_count/total_schools*100:.2f}%)")
+        print(f"Estimasi waktu   : {(total_schools * 3 / 3600):.1f} jam")
+        print(f"{'='*70}\n")
+        
+        input("Tekan ENTER untuk mulai scraping...")
+        print()
+        
+        start_time = time.time()
+        error_count = 0
+        max_errors = 10  # Maksimal error berturut-turut sebelum berhenti
+        
+        try:
+            # Loop untuk setiap halaman
+            for page in range(start_page, total_pages + 1):
+                page_start = time.time()
+                print(f"\n{'='*70}")
+                print(f"HALAMAN {page:,}/{total_pages:,} | Progress: {(page/total_pages*100):.2f}%")
+                print(f"{'='*70}")
+                
+                schools = self.get_school_list(page=page)
+                
+                if not schools:
+                    error_count += 1
+                    print(f"Tidak ada sekolah ditemukan pada halaman {page}")
+                    
+                    if error_count >= max_errors:
+                        print(f"\nTerlalu banyak error berturut-turut. Menghentikan proses.")
+                        break
+                    
+                    time.sleep(5)
+                    continue
+                
+                error_count = 0  # Reset error count jika berhasil
+                
+                # Proses setiap sekolah
+                for idx, school in enumerate(schools, 1):
+                    try:
+                        processed_count += 1
+                        elapsed = time.time() - start_time
+                        rate = processed_count / elapsed if elapsed > 0 else 0
+                        eta = (total_schools - processed_count) / rate if rate > 0 else 0
+                        
+                        print(f"\n[{idx}/{len(schools)}] Sekolah #{processed_count:,}/{total_schools:,}")
+                        print(f"ETA: {eta/3600:.1f} jam | Kecepatan: {rate*3600:.0f} sekolah/jam")
+                        print(f"{school['url']}")
+                        
+                        # Ambil data akreditasi
+                        akred_data = self.get_akreditasi_data(school['url'])
+                        if akred_data and akred_data.get('npsn'):
+                            akreditasi_data.append(akred_data)
+                            print(f"Akreditasi: {akred_data['npsn']} - {akred_data['nama_sekolah']}")
+                            
+                            # Ambil data referensi
+                            ref_data = self.get_referensi_data(akred_data['npsn'])
+                            if ref_data:
+                                referensi_data.append(ref_data)
+                                print(f"Referensi: {ref_data['nama']}")
+                        else:
+                            print(f"Data akreditasi tidak lengkap")
+                        
+                        time.sleep(1.5)  # Delay antar sekolah
+                        
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        print(f"Error pada sekolah: {e}")
+                        continue
+                
+                # Simpan checkpoint setiap halaman
+                self.save_checkpoint(page, processed_count, total_schools)
+                self.save_temp_data(akreditasi_data, referensi_data)
+                
+                # Simpan ke Excel setiap 100 halaman
+                if page % 100 == 0:
+                    filename = f"data_sekolah_backup_page_{page}.xlsx"
+                    self.save_to_excel(akreditasi_data, referensi_data, filename)
+                    print(f"\nBackup disimpan: {filename}")
+                
+                page_time = time.time() - page_start
+                print(f"\nWaktu halaman: {page_time:.1f} detik")
+                
+                time.sleep(2)  # Delay antar halaman
+        
+        except KeyboardInterrupt:
+            print("\n\nProses dihentikan oleh user!")
+            print(f"Progress: {processed_count}/{total_schools} sekolah ({processed_count/total_schools*100:.2f}%)")
+            
+        except Exception as e:
+            print(f"\n\nError fatal: {e}")
+        
+        finally:
+            # Simpan data final
+            if akreditasi_data or referensi_data:
+                filename = f"data_sekolah_final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                self.save_to_excel(akreditasi_data, referensi_data, filename)
+                
+                total_time = time.time() - start_time
+                
+                print(f"\n{'='*70}")
+                print(f"SCRAPING SELESAI!")
+                print(f"{'='*70}")
+                print(f"Total sekolah berhasil : {len(akreditasi_data):,}")
+                print(f"Data akreditasi        : {len(akreditasi_data):,}")
+                print(f"Data referensi         : {len(referensi_data):,}")
+                print(f"Total waktu            : {total_time/3600:.2f} jam")
+                print(f"File                   : {filename}")
+                print(f"{'='*70}")
+                
+                # Hapus file sementara jika selesai sempurna
+                if processed_count >= total_schools * 0.99:  # 99% selesai
+                    if os.path.exists(self.checkpoint_file):
+                        os.remove(self.checkpoint_file)
+                    if os.path.exists(self.temp_data_file):
+                        os.remove(self.temp_data_file)
+                    print("File checkpoint dihapus (scraping selesai)")
+                else:
+                    print("\nTips: Jalankan script lagi untuk melanjutkan scraping")
+            else:
+                print("\nTidak ada data yang berhasil di-scrape")
 
+
+# Main execution
 if __name__ == "__main__":
-    main()
+    print("\n" + "="*70)
+    print("  SELAMAT DATANG DI SCRAPER DATA SEKOLAH")
+    print("="*70)
+    print("\nScript ini akan mengambil data SEMUA sekolah di Indonesia")
+    print("dari website Kemendikdasmen.")
+    print("\nPERHATIAN:")
+    print("   - Proses ini membutuhkan waktu SANGAT LAMA (~20 hari)")
+    print("   - Pastikan koneksi internet stabil")
+    print("   - Jangan tutup terminal saat scraping berjalan")
+    print("   - Tekan Ctrl+C untuk menghentikan (data akan tetap tersimpan)")
+    print("="*70 + "\n")
+    
+    scraper = SekolahScraper()
+    scraper.scrape_all()

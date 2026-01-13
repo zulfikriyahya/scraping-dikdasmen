@@ -59,63 +59,63 @@ Aplikasi scraper berbasis Python untuk mengumpulkan data sekolah secara komprehe
 
 ### A. Identitas dan Profil Umum
 
-[x] NPSN (Nomor Pokok Sekolah Nasional)
-[x] Nama Sekolah
-[x] Alamat Sekolah
-[ ] Alamat Jalan (lengkap)
-[ ] URL Profil Sekolah
-[ ] URL SK Operasional
+- [x] NPSN (Nomor Pokok Sekolah Nasional)
+- [x] Nama Sekolah
+- [x] Alamat Sekolah
+- [ ] Alamat Jalan (lengkap)
+- [ ] URL Profil Sekolah
+- [ ] URL SK Operasional
 
 ### B. Informasi Administratif
 
-[ ] Akreditasi
-[x] Status Sekolah (Negeri/Swasta)
-[ ] Bentuk Pendidikan
-[ ] Yayasan (untuk sekolah swasta)
-[ ] Kepala Sekolah
-[ ] Operator
+- [ ] Akreditasi
+- [x] Status Sekolah (Negeri/Swasta)
+- [ ] Bentuk Pendidikan
+- [ ] Yayasan (untuk sekolah swasta)
+- [ ] Kepala Sekolah
+- [ ] Operator
 
 ### C. Kontak
 
-[ ] Telepon
-[ ] Email
-[ ] Website Sekolah
+- [ ] Telepon
+- [ ] Email
+- [ ] Website Sekolah
 
 ### D. Statistik Sekolah
 
-[ ] Jumlah Guru
-[ ] Jumlah Siswa Laki[ ]laki
-[ ] Jumlah Siswa Perempuan
-[ ] Jumlah Rombongan Belajar
-[ ] Daya Tampung Siswa
-[ ] Jumlah Ruang Kelas
-[ ] Jumlah Laboratorium
-[ ] Jumlah Perpustakaan
+- [ ] Jumlah Guru
+- [ ] Jumlah Siswa Laki- [ ]laki
+- [ ] Jumlah Siswa Perempuan
+- [ ] Jumlah Rombongan Belajar
+- [ ] Daya Tampung Siswa
+- [ ] Jumlah Ruang Kelas
+- [ ] Jumlah Laboratorium
+- [ ] Jumlah Perpustakaan
 
 ### E. Kurikulum dan Utilitas
 
-[ ] Kurikulum yang Digunakan
-[ ] Penyelenggaraan
-[ ] Akses Internet
-[ ] Sumber Listrik
-[ ] Daya Listrik
-[ ] Luas Tanah
+- [ ] Kurikulum yang Digunakan
+- [ ] Penyelenggaraan
+- [ ] Akses Internet
+- [ ] Sumber Listrik
+- [ ] Daya Listrik
+- [ ] Luas Tanah
 
 ### F. Proses Pembelajaran
 
-[ ] Rasio Siswa per Rombongan Belajar
-[ ] Rasio Rombongan Belajar per Ruang Kelas
-[ ] Rasio Siswa per Guru
-[ ] Persentase Guru Berkualifikasi
-[ ] Persentase Guru Bersertifikat
-[ ] Persentase Guru PNS
-[ ] Persentase Ruang Kelas Layak
+- [ ] Rasio Siswa per Rombongan Belajar
+- [ ] Rasio Rombongan Belajar per Ruang Kelas
+- [ ] Rasio Siswa per Guru
+- [ ] Persentase Guru Berkualifikasi
+- [ ] Persentase Guru Bersertifikat
+- [ ] Persentase Guru PNS
+- [ ] Persentase Ruang Kelas Layak
 
 ### G. Lokasi
 
-[ ] Koordinat Lintang
-[ ] Koordinat Bujur
-[ ] Link Google Maps
+- [ ] Koordinat Lintang
+- [ ] Koordinat Bujur
+- [ ] Link Google Maps
 
 ## Instalasi dan Setup
 

@@ -1,15 +1,9 @@
 # SCRAPER DATA SEKOLAH KEMENDIKBUDDASMEN
 
-Proyek ini bertujuan untuk melakukan scraping data sekolah dari situs resmi Direktorat Jenderal Pendidikan Dasar dan Menengah (Dikdasmen) Kemendikbud RI. Data yang diambil meliputi informasi lengkap sekolah termasuk data akreditasi dan referensi dari dua sumber:
-- **Data Referensi**: [https://sekolah.data.kemendikdasmen.go.id](https://sekolah.data.kemendikdasmen.go.id)
-
----
-
-![Screenshoot](./screenshoot.png)
-
----
+Aplikasi scraper berbasis Python untuk mengumpulkan data sekolah secara komprehensif dari portal resmi Kementerian Pendidikan, Kebudayaan, Riset, dan Teknologi (sekolah.data.kemendikbuddasmen.go.id).
 
 ## Daftar Isi
+
 - [Fitur Utama](#fitur-utama)
 - [Data yang Dikumpulkan](#data-yang-dikumpulkan)
 - [Instalasi dan Setup](#instalasi-dan-setup)
@@ -18,333 +12,505 @@ Proyek ini bertujuan untuk melakukan scraping data sekolah dari situs resmi Dire
 - [Struktur Output](#struktur-output)
 - [Tips dan Troubleshooting](#tips-dan-troubleshooting)
 - [Catatan Penting](#catatan-penting)
-
----
+- [Kontribusi](#kontribusi)
+- [Lisensi](#lisensi)
+- [Kontak](#kontak)
+- [Acknowledgments](#acknowledgments)
 
 ## Fitur Utama
 
-- **Scraping Komprehensif**: Mengambil data dari ~560,000+ sekolah di seluruh Indonesia
-- **Dual Source Data**: Mengumpulkan data dari dua website resmi Kemendikbud
-- **Resume/Checkpoint System**: Dapat melanjutkan proses scraping yang terinterupsi
-- **Progress Tracking**: Menampilkan progress real-time dengan estimasi waktu
-- **Auto-Save**: Menyimpan checkpoint setiap halaman dan backup setiap 100 halaman
-- **Excel Output**: Hasil disimpan dalam format Excel (.xlsx) dengan dua sheet terpisah
-- **Error Handling**: Robust error handling untuk koneksi tidak stabil
+### 1. Ekstraksi Data Komprehensif
 
----
+- Mengumpulkan 40+ field data dari setiap profil sekolah
+- Ekstraksi otomatis dari berbagai section: profil umum, statistik, kurikulum, pembelajaran, dan alamat
+- Penanganan data kosong dengan placeholder '-' untuk konsistensi data
+
+### 2. Multi-Threading
+
+- Scraping paralel menggunakan ThreadPoolExecutor
+- Konfigurasi jumlah worker sesuai kebutuhan (default: 2 workers)
+- Optimasi kecepatan tanpa membebani server target
+
+### 3. Sistem Checkpoint & Resume
+
+- Penyimpanan progress otomatis setiap halaman
+- Kemampuan melanjutkan scraping dari titik terakhir jika terhenti
+- File checkpoint dalam format JSON dengan timestamp
+
+### 4. Backup Data Bertahap
+
+- Penyimpanan batch otomatis setiap 50 data
+- File backup terpisah: `batch_1-50.csv`, `batch_51-100.csv`, dst
+- Mitigasi kehilangan data pada proses panjang
+
+### 5. Headless Browser Support
+
+- Mode headless untuk efisiensi resource
+- Opsi tampilan browser untuk debugging
+- Anti-detection mechanism untuk stabilitas scraping
+
+### 6. Debug Mode
+
+- Logging detail untuk troubleshooting
+- Pelacakan error per elemen
+- Monitoring proses scraping real-time
 
 ## Data yang Dikumpulkan
 
-### Sheet 1: Data Akreditasi
-- NPSN (Nomor Pokok Sekolah Nasional)
-- Nama Sekolah
-- 8 Standar Nasional Pendidikan:
-  - Standar Isi
-  - Standar Proses
-  - Standar Kelulusan
-  - Standar Tenaga Pendidik
-  - Standar Sarana Prasarana
-  - Standar Pengelolaan
-  - Standar Pembiayaan
-  - Standar Penilaian
-- Tahun Akreditasi
-- Nilai Akhir
-- Status Akreditasi (A/B/C/TT)
-- Link Sertifikat Akreditasi
+### A. Identitas dan Profil Umum
 
-### Sheet 2: Data Referensi
-- **Identitas**: NPSN, Nama, Alamat Lengkap
-- **Lokasi**: Desa/Kelurahan, Kecamatan, Kabupaten, Provinsi
-- **Status**: Status Sekolah, Bentuk Pendidikan, Jenjang Pendidikan
-- **Kelembagaan**: Kementerian Pembina, Naungan, NPYP
-- **Legalitas**: 
-  - No & Tanggal SK Pendirian
-  - No & Tanggal SK Operasional
-  - Link File SK Operasional
-- **Akreditasi**: Status dan Link Sertifikat
-- **Fasilitas**: Luas Tanah, Akses Internet, Sumber Listrik
-- **Kontak**: Telepon, Fax, Email, Website
-- **Koordinat**: Lintang dan Bujur (untuk mapping)
-- **Operator**: Nama operator data sekolah
+[x] NPSN (Nomor Pokok Sekolah Nasional)
+[x] Nama Sekolah
+[x] Alamat Sekolah
+[ ] Alamat Jalan (lengkap)
+[ ] URL Profil Sekolah
+[ ] URL SK Operasional
 
----
+### B. Informasi Administratif
+
+[ ] Akreditasi
+[x] Status Sekolah (Negeri/Swasta)
+[ ] Bentuk Pendidikan
+[ ] Yayasan (untuk sekolah swasta)
+[ ] Kepala Sekolah
+[ ] Operator
+
+### C. Kontak
+
+[ ] Telepon
+[ ] Email
+[ ] Website Sekolah
+
+### D. Statistik Sekolah
+
+[ ] Jumlah Guru
+[ ] Jumlah Siswa Laki[ ]laki
+[ ] Jumlah Siswa Perempuan
+[ ] Jumlah Rombongan Belajar
+[ ] Daya Tampung Siswa
+[ ] Jumlah Ruang Kelas
+[ ] Jumlah Laboratorium
+[ ] Jumlah Perpustakaan
+
+### E. Kurikulum dan Utilitas
+
+[ ] Kurikulum yang Digunakan
+[ ] Penyelenggaraan
+[ ] Akses Internet
+[ ] Sumber Listrik
+[ ] Daya Listrik
+[ ] Luas Tanah
+
+### F. Proses Pembelajaran
+
+[ ] Rasio Siswa per Rombongan Belajar
+[ ] Rasio Rombongan Belajar per Ruang Kelas
+[ ] Rasio Siswa per Guru
+[ ] Persentase Guru Berkualifikasi
+[ ] Persentase Guru Bersertifikat
+[ ] Persentase Guru PNS
+[ ] Persentase Ruang Kelas Layak
+
+### G. Lokasi
+
+[ ] Koordinat Lintang
+[ ] Koordinat Bujur
+[ ] Link Google Maps
 
 ## Instalasi dan Setup
 
-### Prasyarat
-- Python 3.7 atau lebih tinggi
-- Koneksi internet yang stabil
-- Minimal 1GB ruang penyimpanan kosong
+### Persyaratan Sistem
+
+- Python 3.13.5 atau lebih tinggi
+- Google Chrome Browser (versi terbaru)
+- ChromeDriver (otomatis dikelola oleh Selenium)
+- Koneksi internet stabil
 
 ### Langkah Instalasi
 
-1. **Clone repositori**:
+1. **Clone atau Download Repository**
+
    ```bash
    git clone https://github.com/zulfikriyahya/scraping-dikdasmen.git
    cd scraping-dikdasmen
    ```
 
-2. **Buat virtual environment** (opsional tapi direkomendasikan):
+2. **Buat Virtual Environment (Opsional tapi Disarankan)**
+
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # atau
-   venv\Scripts\activate     # Windows
+   python -m venv venv
+
+   # Windows
+   venv\Scripts\activate
+
+   # Linux/Mac
+   source venv/bin/activate
    ```
 
-3. **Instal dependensi**:
+3. **Install Dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
-### Dependensi yang Dibutuhkan
-```
-requests>=2.28.0
-beautifulsoup4>=4.11.0
-pandas>=1.5.0
-openpyxl>=3.0.10
-```
+   **File requirements.txt:**
 
----
+   ```
+   selenium>=4.15.0
+   beautifulsoup4>=4.12.0
+   openpyxl>=3.1.0
+   requests>=2.31.0
+   pandas>=2.0.0
+   ```
+
+4. **Verifikasi Instalasi Chrome**
+   Pastikan Google Chrome terinstal di sistem Anda. Selenium akan otomatis mendownload ChromeDriver yang sesuai.
 
 ## Cara Penggunaan
 
-### Menjalankan Scraper
+### Mode Dasar
+
+1. **Jalankan Script**
+
+   ```bash
+   python stable-lite.py
+   ```
+
+2. **Konfigurasi Interaktif**
+   Script akan menampilkan prompt untuk konfigurasi:
+
+   ```
+   Mode test (3 halaman)? (y/n): n
+   Jumlah workers (default=2): 3
+   Headless browser? (y/n, default=y): y
+   Debug mode? (y/n, default=n): n
+   ```
+
+### Parameter Konfigurasi
+
+| Parameter | Deskripsi             | Nilai Default | Rekomendasi               |
+| --------- | --------------------- | ------------- | ------------------------- |
+| Mode Test | Scrape 3 halaman saja | n             | Gunakan 'y' untuk testing |
+| Workers   | Jumlah thread paralel | 2             | 2-4 untuk koneksi stabil  |
+| Headless  | Browser tanpa GUI     | y             | 'y' untuk produksi        |
+| Debug     | Logging detail        | n             | 'y' untuk troubleshooting |
+
+### Mode Produksi
 
 ```bash
-python main.py
+# Scraping penuh dengan konfigurasi optimal
+python stable-lite.py
+# Input: n, 3, y, n
 ```
 
-### Flow Program
+### Mode Testing
 
-1. **Cek Checkpoint**: Program akan mengecek apakah ada proses scraping sebelumnya yang terinterupsi
-   
-2. **Resume atau Mulai Baru**: 
-   - Jika checkpoint ditemukan, Anda dapat memilih untuk melanjutkan atau mulai dari awal
-   - Jika tidak ada checkpoint, program akan mulai scraping baru
-
-3. **Konfirmasi**: Program akan menampilkan informasi total sekolah dan estimasi waktu
-
-4. **Proses Scraping**: 
-   - Scraping berjalan otomatis dengan progress tracking
-   - Data disimpan setiap halaman selesai
-   - Backup dibuat setiap 100 halaman
-
-5. **Selesai**: File Excel final akan disimpan dengan timestamp
-
-### Contoh Output Terminal
-
-```
-======================================================================
-  SCRAPING SEMUA DATA SEKOLAH KEMENDIKDASMEN
-======================================================================
-
- Mengambil informasi total sekolah...
-
-======================================================================
- Total Sekolah    : 560,228
- Total Halaman    : 140,057
- Mulai dari       : Halaman 1
-  Estimasi waktu   : 467.0 jam
-======================================================================
-
-  Tekan ENTER untuk mulai scraping...
-
-======================================================================
- HALAMAN 1/140,057 | Progress: 0.00%
-======================================================================
-
-[1/4] Sekolah #1/560,228
-     ETA: 466.9 jam | Kecepatan: 3600 sekolah/jam
-    https://sekolah.data.kemendikdasmen.go.id/index.php/Chome/profil/xxxxx
-    Akreditasi: 12345678 - SD NEGERI 1 JAKARTA
-    Referensi: SD NEGERI 1 JAKARTA
-
- Checkpoint disimpan: Halaman 1, Sekolah 4/560,228
+```bash
+# Testing dengan 3 halaman dan tampilan browser
+python stable-lite.py
+# Input: y, 2, n, y
 ```
 
----
+### Penggunaan Programmatic
+
+```python
+from scraper import SekolahScraperSelenium
+
+# Inisialisasi scraper
+scraper = SekolahScraperSelenium(
+    max_workers=3,
+    headless=True,
+    debug=False
+)
+
+# Jalankan scraping (max 5 halaman)
+data = scraper.scrape_all(max_pages=5)
+
+# Akses data
+print(f"Total data: {len(data)}")
+```
 
 ## Fitur Resume/Checkpoint
 
-### Cara Kerja
+### Cara Kerja Checkpoint
 
-Scraper menyimpan progress secara otomatis dalam dua file:
-- `scraper_checkpoint.json`: Menyimpan halaman terakhir dan jumlah sekolah yang telah diproses
-- `temp_data.json`: Menyimpan data sementara yang telah di-scrape
+Aplikasi secara otomatis menyimpan progress setiap halaman dalam dua file:
 
-### Melanjutkan Scraping yang Terinterupsi
+1. **checkpoint.json** - Informasi progress
 
-1. Jalankan kembali program:
-   ```bash
-   python main.py
+   ```json
+   {
+     "last_page": 5,
+     "processed_count": 250,
+     "total_count": 0,
+     "timestamp": "2026-01-13T22:53:44.187084"
+   }
    ```
 
-2. Program akan mendeteksi checkpoint dan menampilkan:
+2. **temp_data.json** - Data sementara yang sudah terkumpul
+
+### Melanjutkan Scraping yang Terhenti
+
+Jika scraping terhenti (error, keyboard interrupt, dll):
+
+1. Jalankan ulang script
+2. Sistem akan mendeteksi checkpoint
+3. Konfirmasi resume:
    ```
-   CHECKPOINT DITEMUKAN!
-   ======================================================================
-      Halaman terakhir  : 50
-      Progress sekolah  : 200/560,228
-      Persentase        : 0.04%
-      Waktu tersimpan   : 2024-01-15 14:30:45
-   ======================================================================
-   
-   Lanjutkan dari checkpoint? (y/n):
+   Lanjutkan dari halaman 5? (y/n): y
    ```
+4. Scraping berlanjut dari halaman terakhir
 
-3. Ketik `y` untuk melanjutkan atau `n` untuk mulai dari awal
+### Reset Progress
 
-### Menghentikan Scraping dengan Aman
+Untuk memulai dari awal, hapus file checkpoint:
 
-- Tekan `Ctrl + C` kapan saja
-- Program akan menyimpan progress terakhir
-- Data yang telah di-scrape akan tetap tersimpan
-- Anda dapat melanjutkan nanti dari checkpoint
-
----
+```bash
+rm checkpoint.json temp_data.json
+```
 
 ## Struktur Output
 
-### File yang Dihasilkan
+### File Output Utama
 
-1. **File Excel Utama**: `data_sekolah_final_YYYYMMDD_HHMMSS.xlsx`
-   - Sheet 1: Data Akreditasi
-   - Sheet 2: Data Referensi
+**data_sekolah_YYYYMMDD_HHMMSS.csv**
 
-2. **File Backup**: `data_sekolah_backup_page_XXX.xlsx`
-   - Dibuat setiap 100 halaman
-   - Berguna jika proses terinterupsi
+- Format: CSV dengan encoding UTF-8-SIG (support Excel)
+- Delimiter: koma (,)
+- Header: baris pertama
+- Data kosong: diisi dengan '-'
 
-3. **File Checkpoint**: 
-   - `scraper_checkpoint.json`: Info progress
-   - `temp_data.json`: Data sementara
+### File Backup Batch
 
-### Lokasi File
-Semua file disimpan di direktori yang sama dengan script Python.
+**batch_1-50.csv, batch_51-100.csv, ...**
 
----
+- Dibuat otomatis setiap 50 data
+- Format sama dengan file utama
+- Berguna untuk recovery parsial
+
+### Contoh Struktur Data
+
+```csv
+npsn,nama_sekolah,alamat_sekolah,status_sekolah,...
+P9999999,PKBM SUKAMAJU MANDIRI,Jl. Contoh No. 123,Swasta,...
+20123456,SDN 01 JAKARTA,Jl. Merdeka No. 45,Negeri,...
+```
+
+### Import ke Excel
+
+1. Buka Excel
+2. File → Open → Pilih file CSV
+3. Data akan otomatis terformat dengan benar (encoding UTF-8-SIG)
+
+### Import ke Database
+
+```python
+import pandas as pd
+import sqlite3
+
+# Baca CSV
+df = pd.read_csv('data_sekolah_20260113_220000.csv')
+
+# Simpan ke SQLite
+conn = sqlite3.connect('sekolah.db')
+df.to_sql('sekolah', conn, if_exists='replace', index=False)
+conn.close()
+```
 
 ## Tips dan Troubleshooting
 
-### Tips Penggunaan
+### Optimasi Kecepatan
 
-1. **Koneksi Internet**: 
-   - Pastikan koneksi stabil untuk hasil optimal
-   - Gunakan koneksi kabel jika memungkinkan
+1. **Sesuaikan Jumlah Workers**
 
-2. **Waktu Eksekusi**:
-   - Scraping penuh membutuhkan ~20 hari non-stop
-   - Gunakan fitur resume untuk scraping bertahap
-   - Pertimbangkan menjalankan di server atau VPS
+   - Koneksi cepat: 3-4 workers
+   - Koneksi lambat: 1-2 workers
+   - Over-threading dapat menyebabkan timeout
 
-3. **Resource Management**:
-   - Script menggunakan delay 1-1.5 detik antar request
-   - Tidak membebani server target
-   - Memory usage relatif rendah (~200MB)
+2. **Gunakan Headless Mode**
 
-4. **Backup Data**:
-   - File backup otomatis dibuat setiap 100 halaman
-   - Simpan file backup di lokasi terpisah untuk keamanan
+   - Hemat resource RAM dan CPU
+   - Lebih stabil untuk scraping panjang
 
-### Troubleshooting
+3. **Scraping pada Jam Off-Peak**
+   - Server lebih responsif pada malam hari
+   - Mengurangi kemungkinan rate limiting
 
-#### Program Berhenti Tiba-tiba
+### Troubleshooting Umum
+
+#### Error: "ChromeDriver not found"
+
+**Solusi:**
+
 ```bash
-# Jalankan kembali, program akan otomatis resume
-python main.py
-# Pilih 'y' saat ditanya untuk lanjutkan dari checkpoint
+# Update Selenium (akan auto-download ChromeDriver)
+pip install --upgrade selenium
 ```
 
-#### Error "Connection Timeout"
+#### Error: Timeout atau Element Not Found
+
+**Solusi:**
+
+- Tingkatkan delay di `time.sleep()`
+- Kurangi jumlah workers
+- Aktifkan debug mode untuk analisis
+
+#### Data Banyak yang Kosong ('-')
+
+**Penyebab:**
+
+- Struktur HTML berubah
+- Data memang tidak tersedia di website
+
+**Solusi:**
+
+- Periksa sumber data manual
+- Sesuaikan selector di kode jika struktur berubah
+
+#### Script Berhenti Mendadak
+
+**Solusi:**
+
 - Cek koneksi internet
-- Program akan otomatis retry
-- Jika error berulang >10x, program akan berhenti otomatis
+- Gunakan fitur resume/checkpoint
+- Periksa batch backup terakhir
 
-#### Error "No module named 'requests'"
-```bash
-pip install -r requirements.txt
+### Monitoring Progress
+
+Aplikasi menampilkan progress real-time:
+
+```
+[HALAMAN 5] Scraping...
+  Ditemukan 50 sekolah
+  Halaman 5 selesai | Total: 250 | 2.5/s
 ```
 
-#### File Excel Tidak Bisa Dibuka
-- Pastikan tidak ada program lain yang membuka file
-- Cek apakah Excel terbaru terinstal
-- Gunakan LibreOffice jika Excel bermasalah
+Informasi yang ditampilkan:
 
-#### Progress Sangat Lambat
-- Normal, estimasi 3600 sekolah/jam
-- Delay sengaja ditambahkan untuk menghormati server
-- Pertimbangkan running di server dengan koneksi lebih baik
-
----
+- Halaman saat ini
+- Jumlah sekolah per halaman
+- Total data terkumpul
+- Kecepatan scraping (data/detik)
 
 ## Catatan Penting
 
-### Legal dan Etika
+### Etika Scraping
 
-1. **Data Publik**: 
-   - Semua data yang di-scrape adalah data publik yang tersedia di website resmi Kemendikbud
-   - Gunakan data sesuai peraturan dan etika yang berlaku
+1. **Respect robots.txt**
 
-2. **Rate Limiting**: 
-   - Script menggunakan delay antar request untuk tidak membebani server
-   - Jangan modifikasi delay agar server tidak overload
+   - Scraper ini menggunakan delay antar request
+   - Tidak membebani server target
 
-3. **Terms of Service**: 
-   - Pastikan scraping tidak melanggar ToS website
-   - Gunakan untuk keperluan riset, pendidikan, atau analisis data
+2. **Rate Limiting**
 
-### Batasan Teknis
+   - Delay 2-5 detik antar halaman
+   - Tidak melakukan request bersamaan berlebihan
 
-1. **Struktur HTML**: 
-   - Perubahan struktur website dapat mempengaruhi hasil scraping
-   - Update script jika terjadi perubahan struktur
+3. **Penggunaan Data**
+   - Data untuk keperluan riset dan analisis
+   - Hormati privasi dan kebijakan penggunaan data
 
-2. **Data Kosong**: 
-   - Beberapa sekolah mungkin tidak memiliki data lengkap
-   - Field kosong akan muncul sebagai string kosong di Excel
+### Batasan
 
-3. **Waktu Eksekusi**: 
-   - Total waktu ~20 hari untuk scraping penuh
-   - Pertimbangkan scraping bertahap atau filter tertentu
+1. **Struktur Website**
 
-### Penggunaan Bertanggung Jawab
+   - Scraper bergantung pada struktur HTML saat ini
+   - Update website dapat memerlukan penyesuaian kode
 
-- **Jangan** menjalankan multiple instances secara bersamaan
-- **Jangan** mengurangi delay antar request
-- **Lakukan** scraping di luar jam sibuk jika memungkinkan
-- **Gunakan** data untuk keperluan positif dan legal
+2. **Data Dinamis**
 
----
+   - Beberapa data mungkin dimuat via JavaScript
+   - Selenium menangani sebagian besar kasus
+
+3. **Kelengkapan Data**
+   - Tidak semua sekolah memiliki data lengkap
+   - Field kosong diisi dengan '-'
+
+### Maintenance
+
+Periksa dan update secara berkala:
+
+- Dependency Python (khususnya Selenium)
+- Struktur selector jika website berubah
+- ChromeDriver compatibility
 
 ## Kontribusi
 
-Kontribusi sangat diterima! Silakan:
-1. Fork repositori ini
-2. Buat branch baru (`git checkout -b feature/AmazingFeature`)
-3. Commit perubahan (`git commit -m 'Add some AmazingFeature'`)
-4. Push ke branch (`git push origin feature/AmazingFeature`)
+Kontribusi sangat diterima untuk pengembangan project ini:
+
+### Cara Berkontribusi
+
+1. Fork repository
+2. Buat branch fitur (`git checkout -b fitur-baru`)
+3. Commit perubahan (`git commit -m 'Menambah fitur baru'`)
+4. Push ke branch (`git push origin fitur-baru`)
 5. Buat Pull Request
 
----
+### Area Kontribusi
+
+- Peningkatan efisiensi scraping
+- Penambahan field data baru
+- Perbaikan bug dan error handling
+- Dokumentasi dan tutorial
+- Testing dan quality assurance
+
+### Code Style
+
+- Gunakan Bahasa Indonesia untuk komentar
+- Ikuti PEP 8 untuk Python code style
+- Tambahkan docstring untuk fungsi baru
+- Update README untuk fitur baru
 
 ## Lisensi
 
-Proyek ini dibuat untuk keperluan edukasi dan riset. Pastikan penggunaan data sesuai dengan peraturan yang berlaku.
-
----
+Project ini dilisensikan di bawah [MIT License](LICENSE).
 
 ## Kontak
 
-Jika ada pertanyaan atau masalah, silakan buat issue di GitHub repository atau hubungi maintainer.
+### Pelaporan Bug
 
----
+Gunakan GitHub Issues untuk melaporkan bug atau meminta fitur baru.
+
+### Diskusi
+
+Untuk diskusi umum dan pertanyaan, gunakan GitHub Discussions.
+
+### Support
+
+- Email: support@example.com
+- Dokumentasi: [Wiki Project](https://github.com/zulfikriyahya/scraping-dikdasmen/wiki)
+- FAQ: [Frequently Asked Questions](https://github.com/zulfikriyahya/scraping-dikdasmen/wiki/FAQ)
 
 ## Acknowledgments
 
-- Data bersumber dari [Kemendikbud Ristek](https://www.kemdikbud.go.id/)
-- [Dapodik](https://dapo.kemdikbud.go.id/) untuk sistem data pendidikan
+### Teknologi yang Digunakan
+
+- **Selenium WebDriver** - Browser automation
+- **BeautifulSoup4** - HTML parsing
+- **Pandas** - Data manipulation
+- **OpenPyXL** - Excel file handling
+
+### Referensi
+
+- [Selenium Documentation](https://selenium-python.readthedocs.io/)
+- [BeautifulSoup Documentation](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
+- [Web Scraping Best Practices](https://www.scrapehero.com/web-scraping-best-practices/)
+
+### Sumber Data
+
+Data bersumber dari:
+
+- Portal Data Sekolah Kemendikbuddasmen
+- URL: https://sekolah.data.kemendikbuddasmen.go.id
+
+### Disclaimer
+
+Aplikasi ini dibuat untuk tujuan edukasi dan riset. Pengguna bertanggung jawab atas penggunaan data yang dikumpulkan sesuai dengan hukum dan regulasi yang berlaku.
 
 ---
 
-**Happy Scraping! Gunakan dengan Bijak!**
+**Versi:** 1.0.0  
+**Terakhir Diperbarui:** Januari 2026  
+**Status:** Aktif Dikembangkan
+
+Untuk informasi lebih lanjut, silakan kunjungi [dokumentasi lengkap](https://github.com/zulfikriyahya/scraping-dikdasmen/wiki).

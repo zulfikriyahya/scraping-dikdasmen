@@ -1,9 +1,10 @@
 """
-SEKOLAH SCRAPER - ULTRA FAST VERSION WITH GPU
-==============================================
+SEKOLAH SCRAPER - PARALLEL VERSION WITH GPU OPTIMIZATION
+=========================================================
 Scraping data sekolah dari sekolah.data.kemendikdasmen.go.id
 Field: NPSN, Nama, Alamat, Status
-Teknik: Maximum parallel processing + GPU acceleration
+Teknik: Direct pagination dengan parallel processing (multiple tabs)
+Fitur Baru: Auto-detect GPU dan optimasi berdasarkan hardware
 """
 
 from selenium import webdriver
@@ -18,26 +19,223 @@ import json
 import os
 import re
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-import multiprocessing
-from queue import Queue
-import asyncio
+import platform
+import subprocess
+import psutil
 
 
-class SekolahScraperUltraFast:
-    """Scraper ultra cepat dengan GPU support dan maximum parallelization"""
+class HardwareDetector:
+    """Deteksi hardware untuk optimasi otomatis"""
+    
+    def __init__(self):
+        self.gpu_info = self.detect_gpu()
+        self.cpu_info = self.detect_cpu()
+        self.memory_info = self.detect_memory()
+    
+    def detect_gpu(self):
+        """Deteksi GPU yang tersedia"""
+        gpu_info = {
+            'available': False,
+            'name': None,
+            'vendor': None,
+            'memory_mb': 0,
+            'score': 0
+        }
+        
+        try:
+            # Coba deteksi NVIDIA GPU
+            if self._check_nvidia_gpu():
+                result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total', 
+                                       '--format=csv,noheader,nounits'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    output = result.stdout.strip().split(',')
+                    gpu_info['available'] = True
+                    gpu_info['name'] = output[0].strip()
+                    gpu_info['vendor'] = 'NVIDIA'
+                    gpu_info['memory_mb'] = int(float(output[1].strip()))
+                    gpu_info['score'] = self._calculate_gpu_score(gpu_info['name'], gpu_info['memory_mb'])
+                    return gpu_info
+        except:
+            pass
+        
+        try:
+            # Coba deteksi AMD GPU (Linux)
+            if platform.system() == 'Linux':
+                result = subprocess.run(['lspci'], capture_output=True, text=True, timeout=5)
+                if 'VGA' in result.stdout or 'Display' in result.stdout:
+                    for line in result.stdout.split('\n'):
+                        if 'AMD' in line or 'Radeon' in line:
+                            gpu_info['available'] = True
+                            gpu_info['vendor'] = 'AMD'
+                            gpu_info['name'] = line.split(':')[-1].strip()
+                            gpu_info['score'] = 50  # Default score untuk AMD
+                            return gpu_info
+        except:
+            pass
+        
+        try:
+            # Coba deteksi Intel GPU
+            if platform.system() == 'Windows':
+                import wmi
+                w = wmi.WMI()
+                for gpu in w.Win32_VideoController():
+                    if 'Intel' in gpu.Name:
+                        gpu_info['available'] = True
+                        gpu_info['vendor'] = 'Intel'
+                        gpu_info['name'] = gpu.Name
+                        gpu_info['score'] = 30  # Intel GPU biasanya lebih lemah
+                        return gpu_info
+        except:
+            pass
+        
+        return gpu_info
+    
+    def _check_nvidia_gpu(self):
+        """Check jika NVIDIA GPU tersedia"""
+        try:
+            subprocess.run(['nvidia-smi'], capture_output=True, timeout=2)
+            return True
+        except:
+            return False
+    
+    def _calculate_gpu_score(self, name, memory_mb):
+        """Hitung score GPU berdasarkan nama dan memory"""
+        score = 0
+        
+        # Base score dari memory
+        score += min(memory_mb / 1024, 24) * 10  # Max 240 points dari 24GB
+        
+        # Bonus dari model GPU
+        name_lower = name.lower()
+        if 'rtx' in name_lower:
+            if '4090' in name_lower:
+                score += 100
+            elif '4080' in name_lower:
+                score += 90
+            elif '4070' in name_lower:
+                score += 80
+            elif '3090' in name_lower:
+                score += 85
+            elif '3080' in name_lower:
+                score += 75
+            elif '3070' in name_lower:
+                score += 65
+            else:
+                score += 50
+        elif 'gtx' in name_lower:
+            score += 40
+        elif 'tesla' in name_lower:
+            score += 70
+        elif 'quadro' in name_lower:
+            score += 60
+        
+        return int(score)
+    
+    def detect_cpu(self):
+        """Deteksi informasi CPU"""
+        cpu_info = {
+            'cores': psutil.cpu_count(logical=False),
+            'threads': psutil.cpu_count(logical=True),
+            'freq_mhz': 0,
+            'score': 0
+        }
+        
+        try:
+            freq = psutil.cpu_freq()
+            if freq:
+                cpu_info['freq_mhz'] = freq.max if freq.max else freq.current
+        except:
+            cpu_info['freq_mhz'] = 2400  # Default
+        
+        # Hitung CPU score
+        cpu_info['score'] = (cpu_info['threads'] * 10) + (cpu_info['freq_mhz'] / 100)
+        
+        return cpu_info
+    
+    def detect_memory(self):
+        """Deteksi informasi RAM"""
+        mem = psutil.virtual_memory()
+        return {
+            'total_gb': mem.total / (1024**3),
+            'available_gb': mem.available / (1024**3)
+        }
+    
+    def get_optimal_workers(self):
+        """Tentukan jumlah optimal workers berdasarkan hardware"""
+        gpu_score = self.gpu_info['score']
+        cpu_score = self.cpu_info['score']
+        
+        # Jika GPU lebih baik, gunakan GPU acceleration
+        if gpu_score > cpu_score * 1.5 and self.gpu_info['available']:
+            # GPU mode: bisa handle lebih banyak workers
+            base_workers = min(self.cpu_info['threads'] * 2, 30)
+            print(f"\n🎮 GPU MODE ENABLED (GPU Score: {gpu_score:.0f} vs CPU Score: {cpu_score:.0f})")
+            print(f"   GPU: {self.gpu_info['name']}")
+            print(f"   Recommended workers: {base_workers}")
+            return base_workers, True
+        else:
+            # CPU mode: workers berdasarkan CPU cores
+            base_workers = max(self.cpu_info['threads'] - 2, 4)
+            base_workers = min(base_workers, 20)
+            print(f"\n💻 CPU MODE (CPU Score: {cpu_score:.0f})")
+            print(f"   CPU: {self.cpu_info['threads']} threads @ {self.cpu_info['freq_mhz']:.0f}MHz")
+            print(f"   Recommended workers: {base_workers}")
+            return base_workers, False
+    
+    def print_hardware_info(self):
+        """Tampilkan informasi hardware"""
+        print("\n" + "="*70)
+        print("  HARDWARE DETECTION")
+        print("="*70)
+        
+        # GPU Info
+        if self.gpu_info['available']:
+            print(f"  GPU: ✓ {self.gpu_info['vendor']} {self.gpu_info['name']}")
+            if self.gpu_info['memory_mb'] > 0:
+                print(f"       Memory: {self.gpu_info['memory_mb']/1024:.1f} GB")
+            print(f"       Score: {self.gpu_info['score']:.0f}")
+        else:
+            print(f"  GPU: ✗ Not detected")
+        
+        # CPU Info
+        print(f"  CPU: {self.cpu_info['cores']} cores / {self.cpu_info['threads']} threads")
+        print(f"       Frequency: {self.cpu_info['freq_mhz']:.0f} MHz")
+        print(f"       Score: {self.cpu_info['score']:.0f}")
+        
+        # Memory Info
+        print(f"  RAM: {self.memory_info['total_gb']:.1f} GB total")
+        print(f"       {self.memory_info['available_gb']:.1f} GB available")
+        
+        print("="*70)
 
-    def __init__(self, max_workers=50, headless=True, debug=False, use_gpu=True):
-        self.max_workers = max_workers
+
+class SekolahScraper:
+    """Scraper untuk data sekolah dengan parallel processing dan GPU optimization"""
+
+    def __init__(self, max_workers=None, headless=True, debug=False, use_gpu=None):
+        # Hardware detection
+        self.hardware = HardwareDetector()
+        self.hardware.print_hardware_info()
+        
+        # Auto-configure workers berdasarkan hardware
+        if max_workers is None:
+            recommended_workers, gpu_mode = self.hardware.get_optimal_workers()
+            self.max_workers = recommended_workers
+            self.use_gpu = gpu_mode if use_gpu is None else use_gpu
+        else:
+            self.max_workers = max_workers
+            self.use_gpu = use_gpu if use_gpu is not None else False
+        
         self.headless = headless
         self.debug = debug
-        self.use_gpu = use_gpu
         
         self.base_url = "https://sekolah.data.kemendikdasmen.go.id"
         self.checkpoint_file = "checkpoint.json"
         self.temp_data_file = "temp_data.json"
-        self.batch_size = 200
+        self.batch_size = 100
         self.batch_counter = 0
         
         # Pagination parameters
@@ -50,15 +248,11 @@ class SekolahScraperUltraFast:
         self.failed_pages = []
         self.processed_pages = 0
         
-        # Performance metrics
-        self.start_time = None
-        self.pages_per_second = 0
-        
         print("\n" + "="*70)
-        print("  SEKOLAH SCRAPER - ULTRA FAST VERSION")
+        print("  SEKOLAH SCRAPER - PARALLEL VERSION (GPU-OPTIMIZED)")
         print("="*70)
-        print(f"  Workers: {max_workers} (MAXIMUM PARALLELIZATION)")
-        print(f"  GPU Acceleration: {'ENABLED' if use_gpu else 'DISABLED'}")
+        print(f"  Mode: {'🎮 GPU-ACCELERATED' if self.use_gpu else '💻 CPU'}")
+        print(f"  Workers: {self.max_workers} (concurrent tabs)")
         print(f"  Headless: {headless}")
         print(f"  Batch Size: {self.batch_size}")
         print(f"  Total Sekolah: {self.total_schools:,}")
@@ -66,82 +260,51 @@ class SekolahScraperUltraFast:
         print("="*70 + "\n")
 
     def create_driver(self):
-        """Buat WebDriver instance dengan GPU acceleration"""
+        """Buat WebDriver instance dengan optimasi GPU jika tersedia"""
         try:
             chrome_options = Options()
             
             if self.headless:
                 chrome_options.add_argument('--headless=new')
             
-            # Basic flags
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-logging')
+            chrome_options.add_argument('--log-level=3')
             
-            # GPU Acceleration
-            if self.use_gpu:
-                chrome_options.add_argument('--enable-gpu')
-                chrome_options.add_argument('--enable-accelerated-2d-canvas')
-                chrome_options.add_argument('--enable-accelerated-video-decode')
-                chrome_options.add_argument('--ignore-gpu-blocklist')
+            # GPU Optimization
+            if self.use_gpu and self.hardware.gpu_info['available']:
+                # Enable GPU acceleration
                 chrome_options.add_argument('--enable-gpu-rasterization')
                 chrome_options.add_argument('--enable-zero-copy')
+                chrome_options.add_argument('--enable-native-gpu-memory-buffers')
+                chrome_options.add_argument('--ignore-gpu-blocklist')
+                
+                if self.debug:
+                    print("  [GPU] Hardware acceleration enabled")
             else:
+                # Disable GPU untuk CPU mode
                 chrome_options.add_argument('--disable-gpu')
             
-            # Maximum performance optimization
+            # Performance optimization
             chrome_options.add_argument('--disable-images')
             chrome_options.add_argument('--blink-settings=imagesEnabled=false')
-            chrome_options.add_argument('--disable-extensions')
-            chrome_options.add_argument('--disable-plugins')
-            chrome_options.add_argument('--disable-pdf-viewer')
-            chrome_options.add_argument('--disable-logging')
-            chrome_options.add_argument('--disable-permissions-api')
-            chrome_options.add_argument('--disable-notifications')
-            chrome_options.add_argument('--disable-offer-store-unmasked-wallet-cards')
-            chrome_options.add_argument('--disable-speech-api')
-            chrome_options.add_argument('--disable-background-timer-throttling')
-            chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-            chrome_options.add_argument('--disable-breakpad')
-            chrome_options.add_argument('--disable-component-extensions-with-background-pages')
-            chrome_options.add_argument('--disable-features=TranslateUI,BlinkGenPropertyTrees')
-            chrome_options.add_argument('--disable-ipc-flooding-protection')
-            chrome_options.add_argument('--disable-renderer-backgrounding')
-            chrome_options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
-            chrome_options.add_argument('--force-color-profile=srgb')
-            chrome_options.add_argument('--metrics-recording-only')
-            chrome_options.add_argument('--mute-audio')
-            chrome_options.add_argument('--no-first-run')
-            chrome_options.add_argument('--safebrowsing-disable-auto-update')
-            chrome_options.add_argument('--log-level=3')
-            chrome_options.add_argument('--window-size=1920,1080')
             
-            # Memory optimization
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-software-rasterizer')
-            chrome_options.add_argument('--disk-cache-size=1')
-            chrome_options.add_argument('--media-cache-size=1')
-            
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
             prefs = {
                 "profile.managed_default_content_settings.images": 2,
                 "profile.default_content_setting_values.notifications": 2,
-                "profile.default_content_setting_values.media_stream": 2,
-                "profile.default_content_setting_values.media_stream_mic": 2,
-                "profile.default_content_setting_values.media_stream_camera": 2,
-                "profile.default_content_setting_values.geolocation": 2,
-                "download.prompt_for_download": False,
-                "download.directory_upgrade": True,
-                "safebrowsing.enabled": False,
             }
             chrome_options.add_experimental_option("prefs", prefs)
             
             driver = webdriver.Chrome(options=chrome_options)
             driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            driver.set_page_load_timeout(20)
-            driver.implicitly_wait(0)
+            driver.set_page_load_timeout(30)
             
             return driver
         
@@ -150,21 +313,12 @@ class SekolahScraperUltraFast:
             return None
 
     def extract_school_list(self, driver):
-        """Ekstrak daftar sekolah dari halaman - OPTIMIZED"""
+        """Ekstrak daftar sekolah dari halaman"""
         try:
-            # Minimal wait time
-            time.sleep(1)
-            
-            # Direct parsing tanpa beautifulsoup untuk speed
-            page_source = driver.page_source
+            time.sleep(2)
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
             
             schools = []
-            
-            # Regex pattern untuk extract data lebih cepat
-            npsn_pattern = re.compile(r'NPSN\s*:\s*(\w+)')
-            
-            # Parse dengan BeautifulSoup
-            soup = BeautifulSoup(page_source, 'lxml')  # lxml lebih cepat dari html.parser
             articles = soup.find_all('article')
             
             for article in articles:
@@ -173,7 +327,7 @@ class SekolahScraperUltraFast:
                     npsn = ''
                     npsn_text = article.find(string=lambda x: x and 'NPSN' in str(x))
                     if npsn_text:
-                        match = npsn_pattern.search(str(npsn_text))
+                        match = re.search(r'NPSN\s*:\s*(\w+)', str(npsn_text))
                         if match:
                             npsn = match.group(1).strip()
                     
@@ -185,7 +339,9 @@ class SekolahScraperUltraFast:
                     
                     # Status
                     status = ''
-                    status_elem = article.find('div', class_=lambda x: x and ('text-orange-600' in str(x) or 'font-semibold' in str(x)))
+                    status_elem = article.find('div', class_=lambda x: x and 'text-orange-600' in str(x))
+                    if not status_elem:
+                        status_elem = article.find('div', class_=lambda x: x and 'font-semibold' in str(x))
                     if status_elem:
                         status = status_elem.get_text(strip=True)
                     
@@ -203,38 +359,45 @@ class SekolahScraperUltraFast:
                             'status_sekolah': status if status else '-'
                         })
                 
-                except:
+                except Exception as e:
+                    if self.debug:
+                        print(f"    Parsing error: {e}")
                     continue
             
             return schools
         
         except Exception as e:
             if self.debug:
-                print(f"  Ekstrak error: {e}")
+                print(f"  Ekstrak list error: {e}")
             return []
 
     def scrape_page(self, page_num):
-        """Scrape satu halaman - ULTRA OPTIMIZED"""
+        """Scrape satu halaman menggunakan URL pagination langsung"""
         driver = None
         try:
             driver = self.create_driver()
             if not driver:
                 return {'page': page_num, 'schools': [], 'success': False}
             
+            # Gunakan URL dengan parameter page dan size langsung
             url = f"{self.base_url}/sekolah?page={page_num}&size={self.page_size}"
+            
             driver.get(url)
             
-            # Optimized wait
+            # Tunggu artikel muncul
             try:
-                WebDriverWait(driver, 10).until(
+                WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((By.TAG_NAME, "article"))
                 )
-            except:
+            except Exception as e:
+                if self.debug:
+                    print(f"  Page {page_num}: Timeout menunggu artikel")
                 return {'page': page_num, 'schools': [], 'success': False}
             
+            # Ekstrak schools
             schools = self.extract_school_list(driver)
             
-            return {'page': page_num, 'schools': schools, 'success': len(schools) > 0}
+            return {'page': page_num, 'schools': schools, 'success': True}
         
         except Exception as e:
             if self.debug:
@@ -242,14 +405,15 @@ class SekolahScraperUltraFast:
             return {'page': page_num, 'schools': [], 'success': False}
         finally:
             if driver:
-                try:
-                    driver.quit()
-                except:
-                    pass
+                driver.quit()
+
+    def process_schools(self, schools):
+        """Proses schools (bisa diperluas untuk detail scraping)"""
+        return schools
 
     def scrape_all(self, max_pages=None):
-        """Fungsi utama scraping - ULTRA FAST PARALLEL"""
-        self.start_time = time.time()
+        """Fungsi utama scraping dengan parallel processing"""
+        start_time = time.time()
         
         # Load checkpoint
         checkpoint = self.load_checkpoint()
@@ -262,9 +426,7 @@ class SekolahScraperUltraFast:
                 self.all_data = self.load_temp_data()
                 print(f"Resume dengan {len(self.all_data)} data existing\n")
         
-        print("="*70)
-        print("MEMULAI ULTRA FAST SCRAPING...")
-        print("="*70 + "\n")
+        print("Memulai proses scraping parallel...\n")
         
         # Tentukan end page
         if max_pages:
@@ -274,135 +436,101 @@ class SekolahScraperUltraFast:
         
         total_pages_to_scrape = end_page - start_page
         
-        print(f"Range: Page {start_page} - {end_page-1}")
-        print(f"Total: {total_pages_to_scrape:,} pages")
-        print(f"Workers: {self.max_workers} parallel instances")
-        print(f"GPU: {'ENABLED' if self.use_gpu else 'DISABLED'}\n")
-        
-        # Progress tracking thread
-        def print_progress():
-            last_count = 0
-            while self.processed_pages < total_pages_to_scrape:
-                time.sleep(5)
-                current_count = len(self.all_data)
-                elapsed = time.time() - self.start_time
-                
-                # Calculate rates
-                schools_per_sec = current_count / elapsed if elapsed > 0 else 0
-                pages_per_sec = self.processed_pages / elapsed if elapsed > 0 else 0
-                
-                # New items in last 5 seconds
-                new_items = current_count - last_count
-                last_count = current_count
-                
-                # ETA calculation
-                remaining_pages = total_pages_to_scrape - self.processed_pages
-                eta_seconds = remaining_pages / pages_per_sec if pages_per_sec > 0 else 0
-                eta_minutes = eta_seconds / 60
-                
-                progress = (self.processed_pages / total_pages_to_scrape) * 100
-                
-                print(f"\n{'='*70}")
-                print(f"[PROGRESS] {progress:.1f}% | Pages: {self.processed_pages:,}/{total_pages_to_scrape:,}")
-                print(f"[DATA] Total: {current_count:,} sekolah | New (5s): +{new_items}")
-                print(f"[SPEED] {schools_per_sec:.1f} sekolah/s | {pages_per_sec:.2f} pages/s")
-                print(f"[ETA] {eta_minutes:.1f} minutes remaining")
-                print(f"[FAILED] {len(self.failed_pages)} pages")
-                print(f"{'='*70}\n")
-        
-        # Start progress thread
-        progress_thread = threading.Thread(target=print_progress, daemon=True)
-        progress_thread.start()
+        print(f"Scraping dari page {start_page} sampai {end_page-1}")
+        print(f"Total: {total_pages_to_scrape:,} pages dengan {self.max_workers} workers parallel")
+        print(f"Hardware mode: {'🎮 GPU-ACCELERATED' if self.use_gpu else '💻 CPU'}\n")
         
         try:
-            # MAXIMUM PARALLEL PROCESSING
+            # Parallel processing dengan ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                # Submit semua tasks sekaligus
+                # Submit semua tasks
                 future_to_page = {
                     executor.submit(self.scrape_page, page): page 
                     for page in range(start_page, end_page)
                 }
                 
-                completed = 0
-                
-                # Process hasil
+                # Process hasil secara real-time
                 for future in as_completed(future_to_page):
                     page_num = future_to_page[future]
-                    completed += 1
                     
                     try:
-                        result = future.result(timeout=30)
+                        result = future.result()
                         
                         if result['success'] and result['schools']:
                             schools = result['schools']
+                            processed = self.process_schools(schools)
                             
                             with self.lock:
-                                self.all_data.extend(schools)
+                                self.all_data.extend(processed)
                                 self.processed_pages += 1
                                 
                                 # Simpan batch
-                                if len(self.all_data) >= (self.batch_counter + 1) * self.batch_size:
+                                if len(self.all_data) % self.batch_size == 0:
                                     self.save_batch()
+                            
+                            # Progress
+                            elapsed = time.time() - start_time
+                            rate = len(self.all_data) / elapsed if elapsed > 0 else 0
+                            progress = (self.processed_pages / total_pages_to_scrape) * 100
+                            
+                            print(f"[PAGE {page_num}] {len(schools)} sekolah | "
+                                  f"Progress: {progress:.1f}% | "
+                                  f"Total: {len(self.all_data):,} | "
+                                  f"Rate: {rate:.1f}/s")
                         else:
                             with self.lock:
                                 self.failed_pages.append(page_num)
+                            if self.debug:
+                                print(f"[PAGE {page_num}] FAILED")
                         
-                        # Auto-save setiap 100 pages
-                        if self.processed_pages % 100 == 0:
+                        # Simpan checkpoint setiap 50 pages
+                        if self.processed_pages % 50 == 0:
                             self.save_checkpoint(page_num, len(self.all_data))
                             self.save_temp_data(self.all_data)
                     
                     except Exception as e:
-                        if self.debug:
-                            print(f"[ERROR] Page {page_num}: {e}")
+                        print(f"[ERROR] Page {page_num}: {e}")
                         with self.lock:
                             self.failed_pages.append(page_num)
         
         except KeyboardInterrupt:
             print("\n\n[INTERRUPT] Dihentikan oleh user")
         
-        # Retry failed pages dengan workers lebih sedikit
-        if self.failed_pages and len(self.failed_pages) < 1000:
+        # Retry failed pages
+        if self.failed_pages:
             print(f"\n{'='*70}")
-            print(f"[RETRY] Mencoba {len(self.failed_pages)} pages yang gagal...")
+            print(f"[RETRY] Mencoba ulang {len(self.failed_pages)} pages yang gagal...")
             print(f"{'='*70}\n")
             
-            retry_workers = min(10, self.max_workers)
+            retry_count = 0
+            for page in self.failed_pages[:]:
+                try:
+                    result = self.scrape_page(page)
+                    if result['success'] and result['schools']:
+                        with self.lock:
+                            self.all_data.extend(result['schools'])
+                            self.failed_pages.remove(page)
+                        retry_count += 1
+                        print(f"[RETRY SUCCESS] Page {page}: {len(result['schools'])} sekolah")
+                except:
+                    pass
             
-            with ThreadPoolExecutor(max_workers=retry_workers) as executor:
-                retry_futures = {
-                    executor.submit(self.scrape_page, page): page 
-                    for page in self.failed_pages[:]
-                }
-                
-                for future in as_completed(retry_futures):
-                    page = retry_futures[future]
-                    try:
-                        result = future.result(timeout=30)
-                        if result['success'] and result['schools']:
-                            with self.lock:
-                                self.all_data.extend(result['schools'])
-                                self.failed_pages.remove(page)
-                            print(f"[RETRY OK] Page {page}: {len(result['schools'])} sekolah")
-                    except:
-                        pass
+            print(f"\nRetry berhasil untuk {retry_count}/{len(self.failed_pages)} pages\n")
         
-        # Simpan final
+        # Simpan data final
         if self.all_data:
             filename = self.save_to_csv(self.all_data)
             
-            elapsed = time.time() - self.start_time
-            
+            elapsed = time.time() - start_time
             print(f"\n{'='*70}")
-            print(f"[SELESAI - ULTRA FAST MODE]")
-            print(f"{'='*70}")
+            print(f"[SELESAI]")
+            print(f"  Mode: {'🎮 GPU-ACCELERATED' if self.use_gpu else '💻 CPU'}")
             print(f"  Total sekolah: {len(self.all_data):,}")
-            print(f"  Pages sukses: {self.processed_pages:,}/{total_pages_to_scrape:,}")
+            print(f"  Pages berhasil: {self.processed_pages:,}/{total_pages_to_scrape:,}")
             print(f"  Pages gagal: {len(self.failed_pages)}")
-            print(f"  Waktu total: {elapsed/60:.2f} menit ({elapsed:.0f} detik)")
-            print(f"  Kecepatan: {len(self.all_data)/elapsed:.1f} sekolah/detik")
-            print(f"  Kecepatan: {self.processed_pages/elapsed:.2f} pages/detik")
-            print(f"  File output: {filename}")
+            print(f"  Waktu: {elapsed/60:.2f} menit ({elapsed:.0f} detik)")
+            print(f"  Rate: {len(self.all_data)/elapsed:.1f} sekolah/detik")
+            print(f"  File: {filename}")
             print(f"{'='*70}\n")
             
             # Cleanup
@@ -418,15 +546,19 @@ class SekolahScraperUltraFast:
     def save_batch(self):
         """Simpan batch data"""
         try:
-            start_idx = (self.batch_counter * self.batch_size)
-            end_idx = min(start_idx + self.batch_size, len(self.all_data))
+            start_idx = (self.batch_counter * self.batch_size) + 1
+            end_idx = min(start_idx + self.batch_size - 1, len(self.all_data))
             
-            batch_data = self.all_data[start_idx:end_idx]
+            batch_data = self.all_data[start_idx-1:end_idx]
             
             if batch_data:
-                filename = f"batch_{start_idx+1}-{end_idx}.csv"
+                filename = f"batch_{start_idx}-{end_idx}.csv"
                 df = pd.DataFrame(batch_data)
                 df.to_csv(filename, index=False, encoding='utf-8-sig')
+                
+                if self.debug:
+                    print(f"  Batch disimpan: {filename}")
+                
                 self.batch_counter += 1
         
         except Exception as e:
@@ -436,12 +568,17 @@ class SekolahScraperUltraFast:
     def save_to_csv(self, data):
         """Simpan ke CSV"""
         try:
-            filename = f"data_sekolah_ultrafast_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            filename = f"data_sekolah_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             
             df = pd.DataFrame(data)
+            
+            # Urutan kolom sesuai requirements
             columns = ['npsn', 'nama_sekolah', 'alamat_sekolah', 'status_sekolah']
             df = df[columns]
+            
+            # Remove duplicates berdasarkan NPSN
             df = df.drop_duplicates(subset=['npsn'], keep='first')
+            
             df.to_csv(filename, index=False, encoding='utf-8-sig')
             
             return filename
@@ -453,18 +590,15 @@ class SekolahScraperUltraFast:
     def save_checkpoint(self, page, count):
         """Simpan checkpoint"""
         with self.lock:
-            try:
-                with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
-                    json.dump({
-                        'last_page': page,
-                        'processed_count': count,
-                        'processed_pages': self.processed_pages,
-                        'total_count': self.total_schools,
-                        'failed_pages': self.failed_pages[:100],  # Simpan max 100 failed pages
-                        'timestamp': datetime.now().isoformat()
-                    }, f, indent=2)
-            except:
-                pass
+            with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'last_page': page,
+                    'processed_count': count,
+                    'processed_pages': self.processed_pages,
+                    'total_count': self.total_schools,
+                    'failed_pages': self.failed_pages,
+                    'timestamp': datetime.now().isoformat()
+                }, f, indent=2)
 
     def load_checkpoint(self):
         """Load checkpoint"""
@@ -484,9 +618,10 @@ class SekolahScraperUltraFast:
         with self.lock:
             try:
                 with open(self.temp_data_file, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False)
-            except:
-                pass
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                if self.debug:
+                    print(f"  Temp save error: {e}")
 
     def load_temp_data(self):
         """Load data sementara"""
@@ -501,25 +636,23 @@ class SekolahScraperUltraFast:
 
 if __name__ == "__main__":
     print("\n" + "="*70)
-    print("  SEKOLAH SCRAPER - ULTRA FAST VERSION WITH GPU")
+    print("  SEKOLAH SCRAPER - PARALLEL VERSION (GPU-OPTIMIZED)")
     print("="*70)
-    print("\n  WARNING: Mode ini akan menggunakan resources maksimum!")
-    print("  Pastikan sistem Anda memiliki:")
-    print("  - RAM: Minimum 8GB (recommended 16GB+)")
-    print("  - CPU: Multi-core processor")
-    print("  - GPU: NVIDIA/AMD untuk acceleration")
-    print("  - Internet: Stable high-speed connection")
-    print("\n" + "="*70 + "\n")
     
-    test_mode = input("Mode test (scrape 50 halaman)? (y/n): ").strip().lower()
-    max_pages = 50 if test_mode == 'y' else None
+    test_mode = input("\nMode test (scrape 10 halaman saja)? (y/n): ").strip().lower()
+    max_pages = 10 if test_mode == 'y' else None
     
-    workers = input("Jumlah parallel workers (10-100, recommended 50, default=50): ").strip()
-    workers = int(workers) if workers.isdigit() and int(workers) > 0 else 50
-    workers = min(workers, 100)  # Max 100 workers
-    
-    use_gpu = input("Gunakan GPU acceleration? (y/n, default=y): ").strip().lower()
-    use_gpu = use_gpu != 'n'
+    # Auto-detect atau manual workers
+    auto = input("Gunakan auto-detect hardware untuk workers? (y/n, default=y): ").strip().lower()
+    if auto == 'n':
+        workers = input("Jumlah parallel workers (recommended 10-20, default=10): ").strip()
+        workers = int(workers) if workers.isdigit() else 10
+        
+        gpu_mode = input("Paksa gunakan GPU mode? (y/n, default=auto): ").strip().lower()
+        use_gpu = True if gpu_mode == 'y' else (False if gpu_mode == 'n' else None)
+    else:
+        workers = None  # Auto-detect
+        use_gpu = None  # Auto-detect
     
     headless = input("Gunakan headless browser? (y/n, default=y): ").strip().lower()
     headless = headless != 'n'
@@ -528,24 +661,20 @@ if __name__ == "__main__":
     debug = debug == 'y'
     
     print("\n" + "="*70)
-    print("KONFIGURASI:")
-    print(f"  Workers: {workers}")
-    print(f"  GPU: {'ENABLED' if use_gpu else 'DISABLED'}")
-    print(f"  Headless: {headless}")
-    print(f"  Mode: {'TEST (50 pages)' if test_mode == 'y' else 'FULL (11,457 pages)'}")
+    print("MEMULAI SCRAPER PARALLEL (GPU-OPTIMIZED)...")
+    if workers:
+        print(f"WARNING: Akan membuka {workers} browser instances secara bersamaan!")
+    else:
+        print(f"WARNING: Akan membuka multiple browser instances (auto-detected)")
     print("="*70 + "\n")
     
-    confirm = input("MULAI SCRAPING ULTRA FAST? (y/n): ").strip().lower()
+    confirm = input("Lanjutkan? (y/n): ").strip().lower()
     if confirm != 'y':
         print("Dibatalkan.")
         exit()
     
-    print("\n" + "="*70)
-    print("LAUNCHING ULTRA FAST MODE...")
-    print("="*70 + "\n")
-    
     try:
-        scraper = SekolahScraperUltraFast(
+        scraper = SekolahScraper(
             max_workers=workers,
             headless=headless,
             debug=debug,

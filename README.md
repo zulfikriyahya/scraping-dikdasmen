@@ -161,6 +161,7 @@ Aplikasi scraper berbasis Python untuk mengumpulkan data sekolah secara komprehe
    openpyxl>=3.1.0
    requests>=2.31.0
    pandas>=2.0.0
+   psutil>=7.2.1
    ```
 
 4. **Verifikasi Instalasi Chrome**

@@ -138,7 +138,7 @@ Aplikasi scraper berbasis Python untuk mengumpulkan data sekolah secara komprehe
 2. **Buat Virtual Environment (Opsional tapi Disarankan)**
 
    ```bash
-   python -m venv venv
+   python3 -m venv venv
 
    # Windows
    venv\Scripts\activate
@@ -173,7 +173,7 @@ Aplikasi scraper berbasis Python untuk mengumpulkan data sekolah secara komprehe
 1. **Jalankan Script**
 
    ```bash
-   python stable-lite.py
+   python3 stable-lite.py
    ```
 
 2. **Konfigurasi Interaktif**
